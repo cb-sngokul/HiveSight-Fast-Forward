@@ -1,8 +1,10 @@
 com/hivesight/engine/Simulator.class
+com/hivesight/engine/Ramp$CouponToAdd.class
 com/hivesight/engine/BillingPeriodUtil.class
 com/hivesight/engine/Ramp$ItemToUpdate.class
 com/hivesight/engine/Ramp$ItemToAdd.class
 com/hivesight/controller/ApiController.class
+com/hivesight/engine/Ramp$DiscountToAdd.class
 com/hivesight/engine/SimulatedSubscription$SubscriptionItem.class
 com/hivesight/HiveSightApplication.class
 com/hivesight/engine/Simulator$SimulationResult.class

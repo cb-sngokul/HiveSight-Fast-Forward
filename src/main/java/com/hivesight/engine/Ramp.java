@@ -9,7 +9,11 @@ public record Ramp(
         String status,
         List<ItemToAdd> itemsToAdd,
         List<ItemToUpdate> itemsToUpdate,
-        List<String> itemsToRemove
+        List<String> itemsToRemove,
+        List<CouponToAdd> couponsToAdd,
+        List<String> couponsToRemove,
+        List<DiscountToAdd> discountsToAdd,
+        List<String> discountsToRemove
 ) {
     public record ItemToAdd(
             String itemPriceId,
@@ -17,7 +21,8 @@ public record Ramp(
             Integer quantity,
             Long unitPrice,
             Integer billingPeriod,
-            String billingPeriodUnit
+            String billingPeriodUnit,
+            Integer billingCycles
     ) {}
 
     public record ItemToUpdate(
@@ -26,6 +31,11 @@ public record Ramp(
             Integer quantity,
             Long unitPrice,
             Integer billingPeriod,
-            String billingPeriodUnit
+            String billingPeriodUnit,
+            Integer billingCycles
     ) {}
+
+    public record CouponToAdd(String couponId, Long applyTill) {}
+
+    public record DiscountToAdd(String id, String durationType, Double percentage, Long amount, String applyOn, String itemPriceId) {}
 }

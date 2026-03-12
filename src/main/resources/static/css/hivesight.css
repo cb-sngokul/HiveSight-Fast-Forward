@@ -70,6 +70,23 @@ body {
     color: #721c24;
 }
 
+.timeline-icon.trial_end {
+    background: #e2e3e5;
+    color: #41464b;
+}
+
+.timeline-icon.paused,
+.timeline-icon.resumed {
+    background: #cce5ff;
+    color: #004085;
+}
+
+.timeline-icon.non_renewing,
+.timeline-icon.contract_end {
+    background: #f5c6cb;
+    color: #721c24;
+}
+
 .timeline-content {
     flex: 1;
 }
@@ -82,6 +99,11 @@ body {
 .timeline-desc {
     color: #6c757d;
     font-size: 0.9rem;
+}
+
+.timeline-amount {
+    font-size: 1rem;
+    white-space: nowrap;
 }
 
 .subscription-option {

@@ -11,6 +11,7 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.ZoneId;
 import java.util.*;
 
 @Service
@@ -21,11 +22,21 @@ public class ChargebeeService {
 
     private final String apiKey;
 
+    private final ZoneId siteTimezone;
+
     public ChargebeeService(
             @Value("${chargebee.site:your-site-test}") String site,
-            @Value("${chargebee.api-key:test_xxxxxxxx}") String apiKey) {
+            @Value("${chargebee.api-key:test_xxxxxxxx}") String apiKey,
+            @Value("${chargebee.timezone:Asia/Kolkata}") String timezone) {
         this.baseUrl = "https://" + site + ".chargebee.com/api/v2";
         this.apiKey = apiKey;
+        ZoneId zone;
+        try {
+            zone = ZoneId.of(timezone);
+        } catch (Exception e) {
+            zone = ZoneId.of("Asia/Kolkata");
+        }
+        this.siteTimezone = zone;
     }
 
     private HttpHeaders authHeaders() {
@@ -111,7 +122,7 @@ public class ChargebeeService {
         List<Ramp> ramps = listRamps(subscriptionId);
 
         SimulatedSubscription sub = Simulator.toSimulatedSubscription(subMap);
-        return Simulator.simulate(sub, ramps, months);
+        return Simulator.simulate(sub, ramps, months, siteTimezone);
     }
 
     public Simulator.SimulationResult validateGhostOfMarch(String subscriptionId, String expectedCancelDate) {
@@ -136,6 +147,8 @@ public class ChargebeeService {
                 result.events(),
                 result.chargebeeUiNextBilling(),
                 result.hivesightNextBilling(),
+                result.currencyCode(),
+                result.timezone(),
                 passed,
                 message
         );
@@ -153,8 +166,10 @@ public class ChargebeeService {
                 Map<String, Object> a = (Map<String, Object>) o;
                 Integer billingPeriod = a.get("billing_period") != null ? ((Number) a.get("billing_period")).intValue() : null;
                 String billingPeriodUnit = (String) a.get("billing_period_unit");
+                Integer billingCycles = a.get("billing_cycles") != null ? ((Number) a.get("billing_cycles")).intValue() : null;
                 // Chargebee ramp API may omit billing_period for items_to_add; fetch from item price if needed
-                if ("plan".equals(a.get("item_type")) && billingPeriod == null) {
+                String itemType = (String) a.get("item_type");
+                if ("plan".equals(itemType) && billingPeriod == null) {
                     String itemPriceId = (String) a.get("item_price_id");
                     if (itemPriceId != null) {
                         Map<String, Object> ip = getItemPrice(itemPriceId);
@@ -166,11 +181,12 @@ public class ChargebeeService {
                 }
                 toAdd.add(new ItemToAdd(
                         (String) a.get("item_price_id"),
-                        (String) a.get("item_type"),
+                        itemType != null ? itemType : "addon",
                         a.get("quantity") != null ? ((Number) a.get("quantity")).intValue() : null,
                         a.get("unit_price") != null ? ((Number) a.get("unit_price")).longValue() : null,
                         billingPeriod,
-                        billingPeriodUnit
+                        billingPeriodUnit,
+                        billingCycles
                 ));
             }
         }
@@ -186,12 +202,18 @@ public class ChargebeeService {
                         u.get("quantity") != null ? ((Number) u.get("quantity")).intValue() : null,
                         u.get("unit_price") != null ? ((Number) u.get("unit_price")).longValue() : null,
                         u.get("billing_period") != null ? ((Number) u.get("billing_period")).intValue() : null,
-                        (String) u.get("billing_period_unit")
+                        (String) u.get("billing_period_unit"),
+                        u.get("billing_cycles") != null ? ((Number) u.get("billing_cycles")).intValue() : null
                 ));
             }
         }
 
-        List<String> toRemove = r.get("items_to_remove") != null ? (List<String>) r.get("items_to_remove") : null;
+        List<String> toRemove = parseStringOrList(r.get("items_to_remove"));
+        List<Ramp.CouponToAdd> couponsToAdd = parseCouponsToAdd(r.get("coupons_to_add"));
+        List<String> couponsToRemove = parseStringOrList(r.get("coupons_to_remove"));
+        List<Ramp.DiscountToAdd> discountsToAdd = parseDiscountsToAdd(r.get("discounts_to_add"));
+        List<String> discountsToRemove = parseStringOrList(r.get("discounts_to_remove"));
+
         return new Ramp(
                 (String) r.get("id"),
                 (String) r.get("subscription_id"),
@@ -199,7 +221,61 @@ public class ChargebeeService {
                 (String) r.get("status"),
                 toAdd,
                 toUpdate,
-                toRemove
+                toRemove,
+                couponsToAdd,
+                couponsToRemove,
+                discountsToAdd,
+                discountsToRemove
         );
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> parseStringOrList(Object val) {
+        if (val == null) return null;
+        if (val instanceof List<?> list) {
+            return list.stream()
+                    .map(o -> o instanceof Map<?, ?> m ? String.valueOf(((Map<?, ?>) m).get("item_price_id")) : String.valueOf(o))
+                    .filter(s -> s != null && !s.equals("null") && !s.isBlank())
+                    .toList();
+        }
+        if (val instanceof String) {
+            String s = (String) val;
+            if (!s.isBlank()) return List.of(s.split(",\\s*"));
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Ramp.CouponToAdd> parseCouponsToAdd(Object val) {
+        if (val instanceof List<?> la) {
+            List<Ramp.CouponToAdd> result = new ArrayList<>();
+            for (Object o : la) {
+                Map<String, Object> a = (Map<String, Object>) o;
+                Long applyTill = a.get("apply_till") != null ? ((Number) a.get("apply_till")).longValue() : null;
+                result.add(new Ramp.CouponToAdd((String) a.get("coupon_id"), applyTill));
+            }
+            return result.isEmpty() ? null : result;
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Ramp.DiscountToAdd> parseDiscountsToAdd(Object val) {
+        if (val instanceof List<?> la) {
+            List<Ramp.DiscountToAdd> result = new ArrayList<>();
+            for (Object o : la) {
+                Map<String, Object> a = (Map<String, Object>) o;
+                result.add(new Ramp.DiscountToAdd(
+                        (String) a.get("id"),
+                        (String) a.get("duration_type"),
+                        a.get("percentage") != null ? ((Number) a.get("percentage")).doubleValue() : null,
+                        a.get("amount") != null ? ((Number) a.get("amount")).longValue() : null,
+                        (String) a.get("apply_on"),
+                        (String) a.get("item_price_id")
+                ));
+            }
+            return result.isEmpty() ? null : result;
+        }
+        return null;
     }
 }

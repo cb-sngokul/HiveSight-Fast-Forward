@@ -14,24 +14,38 @@ function hideError() {
     document.getElementById('error').classList.add('d-none');
 }
 
-function renderTimeline(events) {
+function renderTimeline(events, timezone) {
     const container = document.getElementById('timeline');
     container.innerHTML = '';
 
     const icons = {
         renewal: '📆',
         ramp_applied: '🔄',
-        cancelled: '❌'
+        cancelled: '❌',
+        trial_end: '🧪',
+        paused: '⏸️',
+        resumed: '▶️',
+        non_renewing: '🔚',
+        contract_end: '📋'
     };
 
     events.forEach(e => {
         const div = document.createElement('div');
         div.className = 'timeline-item';
+        const amountHtml = (e.amount != null && e.amount !== undefined)
+            ? `<div class="timeline-amount text-success fw-semibold">${formatAmount(e.amount, e.currencyCode)}</div>`
+            : '';
+        const dateDisplay = e.date ? formatDateTime(e.date, timezone) : (e.dateFormatted || '—');
         div.innerHTML = `
             <div class="timeline-icon ${e.type}">${icons[e.type] || '•'}</div>
             <div class="timeline-content">
-                <div class="timeline-date">${e.dateFormatted}</div>
-                <div class="timeline-desc">${e.description}</div>
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
+                    <div>
+                        <div class="timeline-date" title="${dateDisplay}">${dateDisplay}</div>
+                        <div class="timeline-desc">${e.description}</div>
+                    </div>
+                    ${amountHtml}
+                </div>
             </div>
         `;
         container.appendChild(div);
@@ -42,6 +56,32 @@ function formatDate(ts) {
     return ts ? new Date(ts * 1000).toISOString().split('T')[0] : '—';
 }
 
+/** Full timestamp in site timezone (e.g. 2026-09-12 00:00:00 IST). */
+function formatDateTime(ts, timezone) {
+    if (!ts) return '—';
+    const d = new Date(ts * 1000);
+    const tz = timezone || 'UTC';
+    const dateOpts = { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+    const dateStr = d.toLocaleString('en-CA', dateOpts).replace(',', '');
+    const tzParts = new Intl.DateTimeFormat('en', { timeZone: tz, timeZoneName: 'short' }).formatToParts(d);
+    const tzAbbr = tzParts.find(p => p.type === 'timeZoneName')?.value || tz;
+    return dateStr + ' ' + tzAbbr;
+}
+
+/** Format amount in minor units (cents) to display string. Handles zero-decimal currencies (JPY, etc.). */
+function formatAmount(amount, currencyCode) {
+    if (amount == null || amount === undefined) return '';
+    const currency = (currencyCode || 'USD').toUpperCase();
+    const zeroDecimal = ['JPY', 'KRW', 'VND', 'CLP', 'XOF', 'XAF'].includes(currency);
+    const value = zeroDecimal ? amount : (amount / 100);
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency,
+        minimumFractionDigits: zeroDecimal ? 0 : 2,
+        maximumFractionDigits: zeroDecimal ? 0 : 2
+    }).format(value);
+}
+
 function renderDetailedReport(data) {
     const report = document.getElementById('detailedReport');
     report.classList.remove('d-none');
@@ -50,9 +90,15 @@ function renderDetailedReport(data) {
     const renewals = events.filter(e => e.type === 'renewal').length;
     const ramps = events.filter(e => e.type === 'ramp_applied').length;
     const cancelled = events.some(e => e.type === 'cancelled');
+    const totalRevenue = events
+        .filter(e => e.amount != null && e.amount !== undefined)
+        .reduce((sum, e) => sum + e.amount, 0);
 
     document.getElementById('statRenewals').textContent = renewals;
     document.getElementById('statRamps').textContent = ramps;
+    document.getElementById('statTotalRevenue').textContent = totalRevenue > 0
+        ? formatAmount(totalRevenue, data.currencyCode)
+        : '—';
     document.getElementById('statWindow').textContent = data.simulationStart && data.simulationEnd
         ? `${formatDate(data.simulationStart)} → ${formatDate(data.simulationEnd)}`
         : '18 months';
@@ -182,7 +228,7 @@ document.getElementById('btnSimulate').addEventListener('click', async () => {
         const res = await fetch(`${API_BASE}/simulate/${encodeURIComponent(id)}?months=18`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Simulation failed');
-        renderTimeline(data.events || []);
+        renderTimeline(data.events || [], data.timezone);
         renderDetailedReport(data);
         renderValidationBadge(null, null, null);
     } catch (e) {
@@ -207,7 +253,7 @@ document.getElementById('btnValidate').addEventListener('click', async () => {
         const res = await fetch(url);
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Validation failed');
-        renderTimeline(data.events || []);
+        renderTimeline(data.events || [], data.timezone);
         renderDetailedReport(data);
         renderValidationBadge(data.validationPassed, data.validationMessage, data);
     } catch (e) {

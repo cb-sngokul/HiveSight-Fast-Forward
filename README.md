@@ -45,10 +45,12 @@ export CHARGEBEE_API_KEY=test_xxxxxxxx
 ```properties
 chargebee.site=your-site-test
 chargebee.api-key=test_xxxxxxxx
+chargebee.timezone=Asia/Kolkata
 ```
 
 > Get these from: Chargebee Dashboard → Settings → Configure Chargebee → API Keys  
-> Use a **test/sandbox** site for development.
+> Use a **test/sandbox** site for development.  
+> Set `chargebee.timezone` to match your Chargebee site (Settings → Business Profile → Time zone).
 
 ### Step 4: Run the Application
 

@@ -14,7 +14,14 @@ public record SimulatedSubscription(
         List<SubscriptionItem> subscriptionItems,
         Long cancelledAt,
         boolean hasScheduledChanges,
-        String currencyCode
+        String currencyCode,
+        Long trialEnd,
+        Long pauseDate,
+        Long resumeDate,
+        Integer remainingBillingCycles,
+        Long contractTermEnd,
+        String contractActionAtTermEnd,
+        Integer contractRenewalBillingCycles
 ) {
     public record SubscriptionItem(
             String itemPriceId,
@@ -23,6 +30,7 @@ public record SimulatedSubscription(
             long unitPrice,
             long amount,
             Integer billingPeriod,
-            String billingPeriodUnit
+            String billingPeriodUnit,
+            Integer billingCycles
     ) {}
 }
