@@ -1,6 +1,7 @@
 package com.hivesight.engine;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -22,6 +23,38 @@ public class Simulator {
     public static long parseEndOfMonth(String yyyyMm, ZoneId zone) {
         YearMonth ym = YearMonth.parse(yyyyMm);
         return ym.atEndOfMonth().atTime(23, 59, 59).atZone(zone != null ? zone : ZoneOffset.UTC).toEpochSecond();
+    }
+
+    /** Start of calendar month (day 1 00:00:00) for the given epoch, in zone. */
+    private static long startOfMonth(long epochSeconds, ZoneId zone) {
+        LocalDate d = Instant.ofEpochSecond(epochSeconds).atZone(zone != null ? zone : ZoneOffset.UTC).toLocalDate();
+        return d.withDayOfMonth(1).atStartOfDay(zone != null ? zone : ZoneOffset.UTC).toEpochSecond();
+    }
+
+    /** End of calendar month (last day 23:59:59) for the given epoch, in zone. */
+    private static long endOfMonth(long epochSeconds, ZoneId zone) {
+        LocalDate d = Instant.ofEpochSecond(epochSeconds).atZone(zone != null ? zone : ZoneOffset.UTC).toLocalDate();
+        return d.withDayOfMonth(d.lengthOfMonth()).atTime(23, 59, 59).atZone(zone != null ? zone : ZoneOffset.UTC).toEpochSecond();
+    }
+
+    /** Number of days (inclusive) between start and end (epoch seconds, same zone assumed). */
+    private static int daysInRange(long startSeconds, long endSeconds) {
+        return Math.max(1, (int) ((endSeconds - startSeconds) / SECONDS_PER_DAY) + 1);
+    }
+
+    /** Days in the month of the given epoch. */
+    private static int daysInMonth(long epochSeconds, ZoneId zone) {
+        LocalDate d = Instant.ofEpochSecond(epochSeconds).atZone(zone != null ? zone : ZoneOffset.UTC).toLocalDate();
+        return d.lengthOfMonth();
+    }
+
+    /** Human-readable period label e.g. "Nov 1–25". */
+    private static String formatPeriodLabel(long startSeconds, long endSeconds, ZoneId zone) {
+        ZoneId z = zone != null ? zone : ZoneOffset.UTC;
+        LocalDate start = Instant.ofEpochSecond(startSeconds).atZone(z).toLocalDate();
+        LocalDate end = Instant.ofEpochSecond(endSeconds).atZone(z).toLocalDate();
+        String mon = start.format(DateTimeFormatter.ofPattern("MMM yyyy"));
+        return mon + " " + start.getDayOfMonth() + "–" + end.getDayOfMonth();
     }
 
     public record SimulationResult(
@@ -391,9 +424,38 @@ public class Simulator {
                     renewalAmount,
                     state.currencyCode()
             ));
-            MonthlyBreakdown bd = buildMonthlyBreakdown(state, rampsAppliedThisIteration, stateBeforeRamps, renewalDate, zone, state.currencyCode(), taxRate, lastBreakdown);
-            monthlyBreakdowns.add(bd);
-            lastBreakdown = bd;
+
+            // After applying ramps: add "tail" period rows first for any ramp that took effect in a previous calendar month (keeps same-month rows together)
+            for (Ramp ramp : rampsAppliedThisIteration) {
+                long eff = ramp.effectiveFrom();
+                long effMonthStart = startOfMonth(eff, zone);
+                long effMonthEnd = endOfMonth(eff, zone);
+                if (effMonthEnd < renewalDate && eff >= effMonthStart) {
+                    MonthlyBreakdown tail = buildMonthlyBreakdown(state, List.of(ramp), stateBeforeRamps, eff, zone, state.currencyCode(), taxRate, lastBreakdown, eff, effMonthEnd);
+                    monthlyBreakdowns.add(tail);
+                    lastBreakdown = tail;
+                }
+            }
+
+            // Check if a ramp will take effect later in this calendar month (proration split)
+            long monthStart = startOfMonth(renewalDate, zone);
+            long monthEnd = endOfMonth(renewalDate, zone);
+            Ramp rampLaterInMonth = sortedRamps.stream()
+                    .filter(r -> !appliedRampIds.contains(r.id()))
+                    .filter(r -> r.effectiveFrom() > renewalDate && r.effectiveFrom() <= monthEnd)
+                    .findFirst()
+                    .orElse(null);
+
+            if (rampLaterInMonth != null) {
+                // First segment: month start → renewal date (prorated)
+                MonthlyBreakdown firstSegment = buildMonthlyBreakdown(state, rampsAppliedThisIteration, stateBeforeRamps, renewalDate, zone, state.currencyCode(), taxRate, lastBreakdown, monthStart, renewalDate);
+                monthlyBreakdowns.add(firstSegment);
+                lastBreakdown = firstSegment;
+            } else {
+                MonthlyBreakdown bd = buildMonthlyBreakdown(state, rampsAppliedThisIteration, stateBeforeRamps, renewalDate, zone, state.currencyCode(), taxRate, lastBreakdown, null, null);
+                monthlyBreakdowns.add(bd);
+                lastBreakdown = bd;
+            }
 
             if (remainingCycles > 0) remainingCycles--;
 
@@ -479,7 +541,9 @@ public class Simulator {
             ZoneId zone,
             String currencyCode,
             int taxRate,
-            MonthlyBreakdown lastBreakdown) {
+            MonthlyBreakdown lastBreakdown,
+            Long periodStartSeconds,
+            Long periodEndSeconds) {
         SimulatedSubscription.SubscriptionItem plan = getPlanItem(state);
         long unitPrice = plan != null ? plan.unitPrice() : 0;
         int quantity = plan != null ? plan.quantity() : 1;
@@ -490,8 +554,26 @@ public class Simulator {
         long taxCents = taxRate > 0 ? (taxableCents * taxRate) / 100 : 0;
         long totalCents = taxableCents + taxCents;
 
+        String monthKey = formatDate(eventDate, zone).substring(0, 7);
+        String monthLabel = Instant.ofEpochSecond(eventDate).atZone(zone)
+                .format(DateTimeFormatter.ofPattern("MMMM yyyy"));
+
+        boolean isPeriod = periodStartSeconds != null && periodEndSeconds != null;
+        if (isPeriod) {
+            int periodDays = daysInRange(periodStartSeconds, periodEndSeconds);
+            int monthDays = daysInMonth(periodStartSeconds, zone);
+            double ratio = (double) periodDays / (double) monthDays;
+            subtotalCents = Math.round(subtotalCents * ratio);
+            discountCents = Math.round(discountCents * ratio);
+            taxableCents = subtotalCents - discountCents;
+            taxCents = taxRate > 0 ? (taxableCents * taxRate) / 100 : 0;
+            totalCents = taxableCents + taxCents;
+        }
+
         List<String> changes = new ArrayList<>();
-        if (rampsApplied != null && !rampsApplied.isEmpty()) {
+        if (isPeriod) {
+            changes.add("Proration");
+        } else if (rampsApplied != null && !rampsApplied.isEmpty()) {
             if (stateBeforeRamps != null) {
                 SimulatedSubscription.SubscriptionItem prevPlan = getPlanItem(stateBeforeRamps);
                 if (prevPlan != null && plan != null) {
@@ -520,13 +602,12 @@ public class Simulator {
 
         Long impactVsPrevious = lastBreakdown != null ? totalCents - lastBreakdown.totalCents() : null;
 
-        String monthKey = formatDate(eventDate, zone).substring(0, 7);
-        String monthLabel = Instant.ofEpochSecond(eventDate).atZone(zone)
-                .format(DateTimeFormatter.ofPattern("MMMM yyyy"));
+        String periodLabel = isPeriod ? formatPeriodLabel(periodStartSeconds, periodEndSeconds, zone) : null;
 
         return new MonthlyBreakdown(
                 monthKey,
                 monthLabel,
+                periodLabel,
                 unitPrice,
                 quantity,
                 subtotalCents,

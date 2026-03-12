@@ -1,5 +1,365 @@
 const API_BASE = '/api';
 
+/** Last simulation/validation result, used for Export CSV (single subscription). */
+let lastSimulationResult = null;
+
+/** Results from Simulate Batch: array of simulation result objects. When set, Export uses this for all handles. */
+let lastBatchResults = null;
+
+/** Escape a value for CSV (wrap in quotes if contains comma, quote, or newline). */
+function csvEscape(val) {
+    if (val == null || val === undefined) return '';
+    const s = String(val);
+    if (/[,"\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+}
+
+/** Build CSV string from current simulation result (what's shown in the UI). */
+function buildExportCsv(data) {
+    const events = data.events || [];
+    const renewals = events.filter(e => e.type === 'renewal').length;
+    const ramps = events.filter(e => e.type === 'ramp_applied').length;
+    const totalRevenue = events
+        .filter(e => e.amount != null && e.amount !== undefined)
+        .reduce((sum, e) => sum + e.amount, 0);
+    const revDisplay = totalRevenue > 0 ? formatAmount(totalRevenue, data.currencyCode) : '—';
+    const windowStr = data.simulationStart && data.simulationEnd
+        ? `${formatDate(data.simulationStart)} → ${formatDate(data.simulationEnd)}`
+        : '18 months';
+
+    const rows = [];
+    // Summary header + row
+    rows.push(['subscription_id', 'customer_id', 'simulation_start', 'simulation_end', 'renewals_count', 'ramps_applied', 'simulation_window', 'total_revenue', 'currency_code', 'chargebee_next_billing', 'hivesight_next_billing', 'validation_passed', 'validation_message', 'timezone'].join(','));
+    rows.push([
+        data.subscriptionId ?? '',
+        data.customerId ?? '',
+        formatDate(data.simulationStart) ?? '',
+        formatDate(data.simulationEnd) ?? '',
+        renewals,
+        ramps,
+        windowStr,
+        revDisplay,
+        data.currencyCode ?? '',
+        formatDate(data.chargebeeUiNextBilling) ?? '',
+        formatDate(data.hivesightNextBilling) ?? '',
+        data.validationPassed != null ? data.validationPassed : '',
+        data.validationMessage ?? '',
+        data.timezone ?? ''
+    ].map(csvEscape).join(','));
+
+    rows.push('');
+    rows.push(['event_date', 'event_type', 'description', 'amount_display', 'amount_minor', 'currency_code'].join(','));
+    events.forEach(e => {
+        const amountDisplay = (e.amount != null && e.amount !== undefined) ? formatAmount(e.amount, e.currencyCode) : '';
+        rows.push([
+            e.dateFormatted ?? formatDate(e.date) ?? '',
+            e.type ?? '',
+            e.description ?? '',
+            amountDisplay,
+            e.amount != null && e.amount !== undefined ? e.amount : '',
+            e.currencyCode ?? ''
+        ].map(csvEscape).join(','));
+    });
+    return rows.join('\r\n');
+}
+
+/** Build CSV string from multiple simulation results (batch export). */
+function buildBatchExportCsv(results) {
+    const summaryHeader = ['subscription_id', 'customer_id', 'simulation_start', 'simulation_end', 'renewals_count', 'ramps_applied', 'simulation_window', 'total_revenue', 'currency_code', 'chargebee_next_billing', 'hivesight_next_billing', 'validation_passed', 'validation_message', 'timezone'];
+    const rows = [summaryHeader.join(',')];
+
+    results.forEach(data => {
+        const events = data.events || [];
+        const renewals = events.filter(e => e.type === 'renewal').length;
+        const ramps = events.filter(e => e.type === 'ramp_applied').length;
+        const totalRevenue = events
+            .filter(e => e.amount != null && e.amount !== undefined)
+            .reduce((sum, e) => sum + e.amount, 0);
+        const revDisplay = totalRevenue > 0 ? formatAmount(totalRevenue, data.currencyCode) : '—';
+        const windowStr = data.simulationStart && data.simulationEnd
+            ? `${formatDate(data.simulationStart)} → ${formatDate(data.simulationEnd)}`
+            : '18 months';
+        rows.push([
+            data.subscriptionId ?? '',
+            data.customerId ?? '',
+            formatDate(data.simulationStart) ?? '',
+            formatDate(data.simulationEnd) ?? '',
+            renewals,
+            ramps,
+            windowStr,
+            revDisplay,
+            data.currencyCode ?? '',
+            formatDate(data.chargebeeUiNextBilling) ?? '',
+            formatDate(data.hivesightNextBilling) ?? '',
+            data.validationPassed != null ? data.validationPassed : '',
+            data.validationMessage ?? '',
+            data.timezone ?? ''
+        ].map(csvEscape).join(','));
+    });
+
+    rows.push('');
+    rows.push(['subscription_id', 'event_date', 'event_type', 'description', 'amount_display', 'amount_minor', 'currency_code'].join(','));
+    results.forEach(data => {
+        const events = data.events || [];
+        const subId = data.subscriptionId ?? '';
+        events.forEach(e => {
+            const amountDisplay = (e.amount != null && e.amount !== undefined) ? formatAmount(e.amount, e.currencyCode) : '';
+            rows.push([
+                subId,
+                e.dateFormatted ?? formatDate(e.date) ?? '',
+                e.type ?? '',
+                e.description ?? '',
+                amountDisplay,
+                e.amount != null && e.amount !== undefined ? e.amount : '',
+                e.currencyCode ?? ''
+            ].map(csvEscape).join(','));
+        });
+    });
+    return rows.join('\r\n');
+}
+
+/** Parse month label (e.g. "Feb 2026") to sortable key (YYYY-MM). */
+function monthLabelToKey(label) {
+    if (!label || typeof label !== 'string') return '';
+    const parts = label.trim().split(/\s+/);
+    if (parts.length < 2) return label;
+    const months = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
+    const m = months[parts[0]];
+    const y = parseInt(parts[1], 10);
+    if (!m || !y) return label;
+    return `${y}-${String(m).padStart(2, '0')}`;
+}
+
+/** Build CSV for SHEET 1 - Executive Summary: one row per subscription, month columns, Total (Range), Transitions, Risk Level. */
+function buildBatchExecutiveSummaryCsv(results) {
+    if (!results || results.length === 0) return '';
+
+    const breakdownsBySub = new Map();
+    const allMonthLabels = new Set();
+    results.forEach(data => {
+        const list = data.monthlyBreakdowns || [];
+        breakdownsBySub.set(data.subscriptionId ?? '', list);
+        list.forEach(b => { if (b.monthLabel) allMonthLabels.add(b.monthLabel); });
+    });
+    const sortedMonths = [...allMonthLabels].sort((a, b) => monthLabelToKey(a).localeCompare(monthLabelToKey(b)));
+
+    const simulationStart = results[0]?.simulationStart;
+    const simulationEnd = results[0]?.simulationEnd;
+    const rangeStr = simulationStart && simulationEnd
+        ? `${formatDate(simulationStart)} → ${formatDate(simulationEnd)}`
+        : '—';
+    const generatedOn = new Date().toISOString().slice(0, 10);
+
+    const rows = [];
+    rows.push('SHEET 1 - Summary (Executive View)');
+    rows.push(`Simulation Range: ${rangeStr}`);
+    rows.push(`Generated On: ${generatedOn}`);
+    rows.push('');
+
+    const header = ['Subscription', 'Contract End', ...sortedMonths, 'Total (Range)', 'Transitions', 'Risk Level'];
+    rows.push(header.map(csvEscape).join(','));
+
+    results.forEach(data => {
+        const breakdowns = breakdownsBySub.get(data.subscriptionId ?? '') || [];
+        const monthToTotal = new Map();
+        let totalRange = 0;
+        const allChanges = new Set();
+        breakdowns.forEach(b => {
+            if (b.monthLabel) {
+                const totalCents = b.totalCents != null ? b.totalCents : 0;
+                monthToTotal.set(b.monthLabel, totalCents);
+                totalRange += totalCents;
+                (b.changes || []).forEach(c => { if (c) allChanges.add(c); });
+            }
+        });
+
+        const contractEnd = data.subscriptionEndDate
+            ? formatDateLong(data.subscriptionEndDate, data.timezone)
+            : '—';
+
+        const cancelled = (data.events || []).some(e => e.type === 'cancelled');
+        let riskLevel = 'Low';
+        if (cancelled || allChanges.size > 2) riskLevel = 'High';
+        else if (allChanges.size > 0) riskLevel = 'Medium';
+
+        const transitions = allChanges.size > 0 ? [...allChanges].join(', ') : 'None';
+
+        const currencyCode = data.currencyCode || 'USD';
+        const row = [
+            data.subscriptionId ?? '',
+            contractEnd,
+            ...sortedMonths.map(m => {
+                const cents = monthToTotal.get(m);
+                if (cents == null) return '';
+                const s = formatAmount(cents, currencyCode);
+                return s ? s.replace(/\$/g, '').trim() : cents;
+            }),
+            totalRange != null ? formatAmount(totalRange, currencyCode).replace(/\$/g, '').trim() : '',
+            transitions,
+            riskLevel
+        ];
+        rows.push(row.map(csvEscape).join(','));
+    });
+
+    return rows.join('\r\n');
+}
+
+/** Derive full-month period label from monthLabel (e.g. "November 2026" -> "Nov 1–30") when periodLabel is not set. */
+function fullMonthPeriodLabel(monthLabel) {
+    if (!monthLabel || typeof monthLabel !== 'string') return monthLabel || '';
+    const d = new Date(monthLabel + ' 1');
+    if (isNaN(d.getTime())) return monthLabel;
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    const shortMon = d.toLocaleString('en-US', { month: 'short' });
+    return shortMon + ' 1–' + lastDay;
+}
+
+/** Build CSV for SHEET 2 - Monthly Simulation (Detailed View): one row per subscription per month (or per period for proration splits). */
+function buildBatchMonthlyDetailedCsv(results) {
+    if (!results || results.length === 0) return '';
+
+    const generatedOn = new Date().toISOString().slice(0, 10);
+    const rows = [];
+    rows.push('SHEET 2 - Monthly Simulation (Detailed View)');
+    rows.push(`Generated On: ${generatedOn}`);
+    rows.push('');
+
+    const header = ['Subscription', 'Month', 'Period', 'Unit Price', 'Qty', 'Subtotal', 'Discount', 'Tax', 'Total', 'Change Type'];
+    rows.push(header.map(csvEscape).join(','));
+
+    results.forEach(data => {
+        const breakdowns = data.monthlyBreakdowns || [];
+        const currencyCode = data.currencyCode || 'USD';
+        const subId = data.subscriptionId ?? '';
+
+        breakdowns.forEach(b => {
+            const period = b.periodLabel != null ? b.periodLabel : fullMonthPeriodLabel(b.monthLabel);
+            const isProrationRow = b.periodLabel != null || (b.changes || []).some(c => /proration|prorate/i.test(String(c)));
+            const changeType = isProrationRow ? 'Proration' : ((b.changes && b.changes.length > 0) ? b.changes[0] : 'None');
+
+            const stripCurrency = (s) => (s || '').replace(/\$/g, '').trim();
+            const unitPriceDisplay = b.unitPrice != null ? stripCurrency(formatAmount(b.unitPrice, currencyCode)) : '';
+            const subtotalDisplay = b.subtotalCents != null ? stripCurrency(formatAmount(b.subtotalCents, currencyCode)) : '';
+            const discountVal = b.discountCents != null ? b.discountCents : 0;
+            const discountDisplay = discountVal !== 0 ? (discountVal > 0 ? '-' : '') + stripCurrency(formatAmount(Math.abs(discountVal), currencyCode)) : '0';
+            const taxDisplay = b.taxCents != null ? stripCurrency(formatAmount(b.taxCents, currencyCode)) : '';
+            const totalDisplay = b.totalCents != null ? stripCurrency(formatAmount(b.totalCents, currencyCode)) : '';
+
+            const row = [
+                subId,
+                b.monthLabel ?? '',
+                period,
+                unitPriceDisplay || (b.unitPrice != null ? b.unitPrice : ''),
+                b.quantity != null ? b.quantity : '',
+                subtotalDisplay || (b.subtotalCents != null ? b.subtotalCents : ''),
+                discountDisplay,
+                taxDisplay || (b.taxCents != null ? b.taxCents : ''),
+                totalDisplay || (b.totalCents != null ? b.totalCents : ''),
+                changeType
+            ];
+            rows.push(row.map(csvEscape).join(','));
+        });
+    });
+
+    return rows.join('\r\n');
+}
+
+/** Trigger download of a blob as a file. */
+function downloadBlob(blob, filename) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+/** Chart.js instances for batch charts; destroyed when switching to single or re-running batch. */
+let batchRevenueChartInstance = null;
+let batchOutcomeChartInstance = null;
+
+function hideBatchCharts() {
+    if (batchRevenueChartInstance) {
+        batchRevenueChartInstance.destroy();
+        batchRevenueChartInstance = null;
+    }
+    if (batchOutcomeChartInstance) {
+        batchOutcomeChartInstance.destroy();
+        batchOutcomeChartInstance = null;
+    }
+    document.getElementById('batchChartsSection').classList.add('d-none');
+}
+
+/** Render bar chart (revenue by subscription) and pie chart (cancelled vs active) for batch results. */
+function renderBatchCharts(results) {
+    if (!window.Chart || results.length === 0) return;
+    hideBatchCharts();
+
+    const revenueData = results.map(r => {
+        const total = (r.events || [])
+            .filter(e => e.amount != null && e.amount !== undefined)
+            .reduce((sum, e) => sum + e.amount, 0);
+        return { id: r.subscriptionId || '—', revenue: total, currencyCode: r.currencyCode || 'USD' };
+    });
+    const cancelledCount = results.filter(r => (r.events || []).some(e => e.type === 'cancelled')).length;
+    const activeCount = results.length - cancelledCount;
+
+    document.getElementById('batchChartsSection').classList.remove('d-none');
+
+    const barCtx = document.getElementById('batchRevenueChart').getContext('2d');
+    batchRevenueChartInstance = new Chart(barCtx, {
+        type: 'bar',
+        data: {
+            labels: revenueData.map(d => d.id.length > 12 ? d.id.slice(0, 10) + '…' : d.id),
+            datasets: [{
+                label: 'Projected revenue (18 mo)',
+                data: revenueData.map(d => d.revenue),
+                backgroundColor: 'rgba(40, 167, 69, 0.7)',
+                borderColor: 'rgba(40, 167, 69, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function (ctx) {
+                            const d = revenueData[ctx.dataIndex];
+                            return formatAmount(d.revenue, d.currencyCode);
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { ticks: { maxRotation: 45, minRotation: 45 } },
+                y: { beginAtZero: true }
+            }
+        }
+    });
+
+    const pieCtx = document.getElementById('batchOutcomeChart').getContext('2d');
+    batchOutcomeChartInstance = new Chart(pieCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Active through window', 'End in cancellation'],
+            datasets: [{
+                data: [activeCount, cancelledCount],
+                backgroundColor: ['rgba(40, 167, 69, 0.8)', 'rgba(220, 53, 69, 0.8)'],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { position: 'bottom' }
+            }
+        }
+    });
+}
+
 function showLoading(show) {
     document.getElementById('loading').classList.toggle('d-none', !show);
 }
@@ -225,6 +585,35 @@ function renderMonthlyBreakdown(data) {
 
     container.classList.remove('d-none');
 
+    // Option A style: table with split rows (Month, Period, Unit Price, Qty, Subtotal, Total, Change Type)
+    const periodLabel = (b) => b.periodLabel != null ? b.periodLabel : fullMonthPeriodLabel(b.monthLabel);
+    const changeType = (b) => (b.periodLabel != null || (b.changes || []).some(c => /proration|prorate/i.test(String(c)))) ? 'Proration' : ((b.changes && b.changes.length > 0) ? b.changes[0] : 'None');
+
+    const tableRows = breakdowns.map(b => {
+        const period = periodLabel(b);
+        const change = changeType(b);
+        return `<tr>
+            <td>${escapeHtml(b.monthLabel ?? '')}</td>
+            <td>${escapeHtml(period)}</td>
+            <td>${formatAmount(b.unitPrice, currencyCode)}</td>
+            <td>${b.quantity != null ? b.quantity : ''}</td>
+            <td>${formatAmount(b.subtotalCents, currencyCode)}</td>
+            <td>${formatAmount(b.totalCents, currencyCode)}</td>
+            <td>${escapeHtml(change)}</td>
+        </tr>`;
+    }).join('');
+
+    const tableHtml = `
+        <div class="table-responsive mb-4">
+            <p class="small text-muted mb-2">Option A – Show Split Rows (Best)</p>
+            <table class="table table-bordered table-sm">
+                <thead class="table-light">
+                    <tr><th>Month</th><th>Period</th><th>Unit Price</th><th>Qty</th><th>Subtotal</th><th>Total</th><th>Change Type</th></tr>
+                </thead>
+                <tbody>${tableRows}</tbody>
+            </table>
+        </div>`;
+
     const breakdownCards = breakdowns.map(b => {
         const discountLine = b.discountCents > 0
             ? `<div class="d-flex justify-content-between"><span>Manual Discount:</span><span class="text-danger">-${formatAmount(b.discountCents, currencyCode)}</span></div>`
@@ -236,11 +625,14 @@ function renderMonthlyBreakdown(data) {
         const impactLine = b.impactVsPreviousCents != null
             ? `<div class="mt-2 small ${b.impactVsPreviousCents >= 0 ? 'text-success' : 'text-danger'}"><strong>Impact:</strong> ${formatAmount(Math.abs(b.impactVsPreviousCents), currencyCode)} ${b.impactVsPreviousCents >= 0 ? 'increase' : 'decrease'} vs previous month</div>`
             : '';
+        const period = b.periodLabel != null ? b.periodLabel : fullMonthPeriodLabel(b.monthLabel);
+        const change = changeType(b);
 
         return `
             <div class="card mb-3 monthly-breakdown-card">
-                <div class="card-header py-2 bg-light">
-                    <strong>${b.monthLabel}</strong>
+                <div class="card-header py-2 bg-light d-flex justify-content-between align-items-center">
+                    <strong>${escapeHtml(b.monthLabel ?? '')}</strong>
+                    ${b.periodLabel ? `<span class="badge bg-secondary">${escapeHtml(period)} — ${escapeHtml(change)}</span>` : ''}
                 </div>
                 <div class="card-body py-3 small">
                     <div class="mb-2">
@@ -253,7 +645,7 @@ function renderMonthlyBreakdown(data) {
                     </div>
                     <div class="mt-2">
                         <strong>Change:</strong>
-                        <ul class="mb-0 ps-3 mt-1">${(b.changes || []).map(c => `<li>${c}</li>`).join('')}</ul>
+                        <ul class="mb-0 ps-3 mt-1">${(b.changes || []).map(c => `<li>${escapeHtml(String(c))}</li>`).join('')}</ul>
                     </div>
                     ${impactLine}
                 </div>
@@ -267,12 +659,19 @@ function renderMonthlyBreakdown(data) {
                 <strong>Subscription cancelled</strong>
             </div>
             <div class="card-body py-3 small">
-                Subscription cancelled in <strong>${cancelledMonth}</strong>.
+                Subscription cancelled in <strong>${escapeHtml(cancelledMonth)}</strong>.
             </div>
         </div>`
         : '';
 
-    listEl.innerHTML = breakdownCards + cancellationCard;
+    listEl.innerHTML = tableHtml + breakdownCards + cancellationCard;
+}
+
+function escapeHtml(s) {
+    if (s == null) return '';
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
 }
 
 function renderDetailedReport(data) {
@@ -524,6 +923,10 @@ document.getElementById('btnSimulate').addEventListener('click', async () => {
         const res = await fetch(`${API_BASE}/simulate/${encodeURIComponent(id)}${qs ? '?' + qs : ''}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Simulation failed');
+        lastSimulationResult = data;
+        lastBatchResults = null;
+        hideBatchCharts();
+        document.getElementById('btnExport').disabled = false;
         renderTimeline(data.events || [], data.timezone);
         renderDetailedReport(data);
         renderInvoiceTrendChart(data);
@@ -553,6 +956,10 @@ document.getElementById('btnValidate').addEventListener('click', async () => {
         const res = await fetch(url);
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Validation failed');
+        lastSimulationResult = data;
+        lastBatchResults = null;
+        hideBatchCharts();
+        document.getElementById('btnExport').disabled = false;
         renderTimeline(data.events || [], data.timezone);
         renderDetailedReport(data);
         renderInvoiceTrendChart(data);
@@ -563,4 +970,155 @@ document.getElementById('btnValidate').addEventListener('click', async () => {
     } finally {
         showLoading(false);
     }
+});
+
+document.getElementById('btnSimulateBatch').addEventListener('click', async () => {
+    const imported = window.importedSubscriptions;
+    if (!imported || imported.length === 0) {
+        showError('Import a CSV with subscription IDs first.');
+        return;
+    }
+    hideError();
+    const loadingEl = document.getElementById('loading');
+    const msgEl = document.getElementById('loadingMessage');
+    loadingEl.classList.remove('d-none');
+    const results = [];
+    const errors = [];
+    for (let i = 0; i < imported.length; i++) {
+        const { subscription_id: id } = imported[i];
+        msgEl.textContent = `Simulating ${i + 1} of ${imported.length}: ${id}...`;
+        try {
+            const res = await fetch(`${API_BASE}/simulate/${encodeURIComponent(id)}?months=18`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Simulation failed');
+            results.push(data);
+        } catch (e) {
+            errors.push({ id, message: e.message });
+        }
+    }
+    loadingEl.classList.add('d-none');
+    lastBatchResults = results;
+    lastSimulationResult = null; // Don't show any single-subscription report; Export will use batch only
+    document.getElementById('btnExport').disabled = results.length === 0;
+    // Don't render timeline or report in UI for batch — only Export shows the data
+    document.getElementById('detailedReport').classList.add('d-none');
+    document.getElementById('timeline').innerHTML = '';
+    document.getElementById('validationResult').classList.add('d-none');
+    document.getElementById('validationBadge').classList.add('d-none');
+    if (results.length > 0) {
+        renderBatchCharts(results);
+    }
+    if (errors.length > 0) {
+        showError(`Batch completed. ${results.length} succeeded, ${errors.length} failed: ${errors.map(e => e.id + ': ' + e.message).join('; ')}`);
+    } else if (results.length === 0) {
+        showError('All simulations failed.');
+    }
+});
+
+function getExportResults() {
+    if (lastBatchResults && lastBatchResults.length > 0) return lastBatchResults;
+    if (lastSimulationResult) return [lastSimulationResult];
+    return null;
+}
+
+document.getElementById('exportExecutive').addEventListener('click', (e) => {
+    e.preventDefault();
+    const results = getExportResults();
+    if (!results || results.length === 0) return;
+    const csv = buildBatchExecutiveSummaryCsv(results);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = results.length > 1
+        ? `hivesight_batch_executive_${results.length}_subscriptions_${dateStr}.csv`
+        : `hivesight_${(results[0].subscriptionId || 'export').replace(/[^a-zA-Z0-9-_]/g, '_')}_executive_${dateStr}.csv`;
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), filename);
+});
+
+document.getElementById('exportMonthly').addEventListener('click', (e) => {
+    e.preventDefault();
+    const results = getExportResults();
+    if (!results || results.length === 0) return;
+    const csv = buildBatchMonthlyDetailedCsv(results);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = results.length > 1
+        ? `hivesight_batch_monthly_detailed_${results.length}_subscriptions_${dateStr}.csv`
+        : `hivesight_${(results[0].subscriptionId || 'export').replace(/[^a-zA-Z0-9-_]/g, '_')}_monthly_detailed_${dateStr}.csv`;
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), filename);
+});
+
+document.getElementById('btnImport').addEventListener('click', () => {
+    document.getElementById('fileImport').click();
+});
+
+document.getElementById('fileImport').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+        try {
+            const text = reader.result;
+            const lines = text.split(/\r?\n/).filter(l => l.trim());
+            if (lines.length < 2) {
+                showError('CSV must have a header row and at least one data row.');
+                e.target.value = '';
+                return;
+            }
+            function parseCsvRow(line) {
+                const out = [];
+                let cur = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    const c = line[i];
+                    if (c === '"') inQuotes = !inQuotes;
+                    else if (c === ',' && !inQuotes) { out.push(cur.trim().replace(/^"|"$/g, '').replace(/""/g, '"')); cur = ''; }
+                    else cur += c;
+                }
+                out.push(cur.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+                return out;
+            }
+            const header = parseCsvRow(lines[0]).map(h => h.toLowerCase().trim());
+            const subIdIdx = header.findIndex(h => h === 'subscription_id' || h === 'subscription id');
+            const expectedIdx = header.findIndex(h => h === 'expected_cancel_date' || h === 'expected cancel date' || h === 'expected_cancel' || h === 'expected cancel');
+            if (subIdIdx < 0) {
+                showError('CSV must have a "subscription_id" column.');
+                e.target.value = '';
+                return;
+            }
+            const rows = [];
+            for (let i = 1; i < lines.length; i++) {
+                const cells = parseCsvRow(lines[i]);
+                const subId = (cells[subIdIdx] || '').trim().replace(/^"|"$/g, '');
+                if (!subId) continue;
+                const expected = expectedIdx >= 0 ? (cells[expectedIdx] || '').trim().replace(/^"|"$/g, '') : '';
+                rows.push({ subscription_id: subId, expected_cancel_date: expected });
+            }
+            if (rows.length === 0) {
+                showError('No valid subscription_id values found in CSV.');
+                e.target.value = '';
+                return;
+            }
+            hideError();
+            window.importedSubscriptions = rows;
+            document.getElementById('btnSimulateBatch').disabled = false;
+            const listEl = document.getElementById('importedList');
+            const itemsEl = document.getElementById('importedListItems');
+            itemsEl.innerHTML = rows.map((r, i) => `
+                <div class="subscription-option imported-option" data-id="${r.subscription_id}" data-expected="${r.expected_cancel_date || ''}">
+                    <strong>${r.subscription_id}</strong>${r.expected_cancel_date ? ` — cancel: ${r.expected_cancel_date}` : ''}
+                </div>
+            `).join('');
+            listEl.classList.remove('d-none');
+            itemsEl.querySelectorAll('.imported-option').forEach(el => {
+                el.addEventListener('click', () => {
+                    itemsEl.querySelectorAll('.imported-option').forEach(x => x.classList.remove('selected'));
+                    el.classList.add('selected');
+                    document.getElementById('subscriptionId').value = el.dataset.id;
+                    document.getElementById('expectedCancel').value = el.dataset.expected || '';
+                });
+            });
+        } catch (err) {
+            showError('Invalid CSV: ' + err.message);
+        }
+        e.target.value = '';
+    };
+    reader.readAsText(file, 'UTF-8');
 });
