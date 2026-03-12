@@ -546,6 +546,7 @@ public class Simulator {
             Long periodEndSeconds) {
         SimulatedSubscription.SubscriptionItem plan = getPlanItem(state);
         long unitPrice = plan != null ? plan.unitPrice() : 0;
+        System.out.println(unitPrice);
         int quantity = plan != null ? plan.quantity() : 1;
 
         long subtotalCents = computeRecurringAmount(state);
