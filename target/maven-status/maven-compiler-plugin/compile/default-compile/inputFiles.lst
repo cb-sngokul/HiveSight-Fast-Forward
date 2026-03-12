@@ -2,6 +2,7 @@
 /Users/gokulrajsn/Desktop/Hivesight/src/main/java/com/hivesight/service/ChargebeeService.java
 /Users/gokulrajsn/Desktop/Hivesight/src/main/java/com/hivesight/controller/ApiController.java
 /Users/gokulrajsn/Desktop/Hivesight/src/main/java/com/hivesight/engine/BillingPeriodUtil.java
+/Users/gokulrajsn/Desktop/Hivesight/src/main/java/com/hivesight/engine/MonthlyBreakdown.java
 /Users/gokulrajsn/Desktop/Hivesight/src/main/java/com/hivesight/HiveSightApplication.java
 /Users/gokulrajsn/Desktop/Hivesight/src/main/java/com/hivesight/engine/SimulatedSubscription.java
 /Users/gokulrajsn/Desktop/Hivesight/src/main/java/com/hivesight/engine/TimelineEvent.java

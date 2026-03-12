@@ -164,3 +164,21 @@ body {
 .validation-result-card .alert-heading {
     font-weight: 600;
 }
+
+/* Subscription Details Card */
+.subscription-details-card .card {
+    border-width: 2px;
+}
+
+.subscription-details-card .card-header {
+    font-size: 0.95rem;
+}
+
+/* Monthly Breakdown */
+.monthly-breakdown-card {
+    border-left: 3px solid var(--hivesight-primary);
+}
+
+.monthly-breakdown-card .card-body .d-flex {
+    padding: 0.15rem 0;
+}

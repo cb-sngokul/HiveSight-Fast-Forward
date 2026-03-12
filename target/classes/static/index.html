@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HiveSight - Temporal Billing Validation Engine</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/css/hivesight.css?v=4" rel="stylesheet">
+    <link href="/css/hivesight.css?v=6" rel="stylesheet">
 </head>
 <body>
     <nav class="navbar navbar-dark bg-dark navbar-expand-lg">
@@ -20,7 +20,7 @@
     <main class="container py-5">
         <div class="text-center mb-5">
             <h1 class="display-5 fw-bold mb-2">Temporal Billing Validation Engine</h1>
-            <p class="lead text-muted">Simulate the next 18 months of your Chargebee subscription lifecycle. Catch "time-bomb" errors before they occur.</p>
+            <p class="lead text-muted">Simulate your Chargebee subscription lifecycle for a custom date range. Catch "time-bomb" errors before they occur.</p>
         </div>
 
         <div class="row g-4">
@@ -35,6 +35,7 @@
                             <div class="input-group">
                                 <input type="text" id="subscriptionId" class="form-control" placeholder="e.g. 8asukSOXe0W3SU">
                                 <button class="btn btn-outline-secondary" type="button" id="btnFetchSubs">Fetch List</button>
+                                <button class="btn btn-outline-primary" type="button" id="btnLoadDetails" title="Load subscription details">Load Details</button>
                             </div>
                             <div id="subscriptionList" class="mt-2"></div>
                         </div>
@@ -42,6 +43,7 @@
                             <label class="form-label">Expected Cancel Date (Ghost of March)</label>
                             <input type="date" id="expectedCancel" class="form-control" placeholder="2027-11-30">
                         </div>
+                        <div id="subscriptionDetailsCard" class="subscription-details-card d-none"></div>
                     </div>
                 </div>
             </div>
@@ -52,9 +54,19 @@
                         <h5 class="mb-0">2. Run Simulation</h5>
                     </div>
                     <div class="card-body">
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label small text-muted">Start Month</label>
+                                <input type="month" id="startMonth" class="form-control" title="First month of simulation (YYYY-MM)">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small text-muted">End Month</label>
+                                <input type="month" id="endMonth" class="form-control" title="Last month of simulation (YYYY-MM)">
+                            </div>
+                        </div>
                         <div class="d-grid gap-2">
                             <button class="btn btn-success btn-lg" id="btnSimulate">
-                                Simulate 18 Months
+                                Simulate
                             </button>
                             <button class="btn btn-outline-success" id="btnValidate">
                                 Validate Ghost of March
@@ -103,7 +115,13 @@
                                     <div class="col-12 mt-2">
                                         <div class="report-stat">
                                             <span class="report-stat-value text-success" id="statTotalRevenue">—</span>
-                                            <span class="report-stat-label">Total Projected Revenue (18 mo)</span>
+                                            <span class="report-stat-label">Total Projected Revenue</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 mt-2 d-none" id="statCancelledRow">
+                                        <div class="report-stat">
+                                            <span class="report-stat-value text-danger" id="statCancelled">—</span>
+                                            <span class="report-stat-label">Cancelled</span>
                                         </div>
                                     </div>
                                 </div>
@@ -121,7 +139,7 @@
                                 <div class="col-md-6">
                                     <div class="card border-success h-100">
                                         <div class="card-body">
-                                            <h6 class="text-success mb-2">HiveSight (18-Month Simulation)</h6>
+                                            <h6 class="text-success mb-2">HiveSight (Simulation)</h6>
                                             <p class="report-explanation small text-muted mb-2">Last renewal date in our simulation with all ramps applied. Shows the actual projected lifecycle.</p>
                                             <p class="report-date mb-0" id="hivesightNextBilling">—</p>
                                         </div>
@@ -129,6 +147,16 @@
                                 </div>
                             </div>
                             <div id="reportInsight" class="alert alert-info mb-4 d-none"></div>
+                            <div id="invoiceTrendChart" class="mb-4 d-none">
+                                <h6 class="text-uppercase text-muted mb-3">Invoice Trend</h6>
+                                <div class="chart-container" style="position: relative; height: 280px;">
+                                    <canvas id="invoiceChart"></canvas>
+                                </div>
+                            </div>
+                            <div id="monthlyBreakdown" class="mb-4 d-none">
+                                <h6 class="text-uppercase text-muted mb-3">Monthly Breakdown (Core Section)</h6>
+                                <div id="monthlyBreakdownList"></div>
+                            </div>
                         </div>
                         <h6 class="text-uppercase text-muted mb-2 mt-4">Event Timeline</h6>
                         <div id="timeline" class="timeline"></div>
@@ -146,6 +174,7 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="/js/app.js?v=5"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="/js/app.js?v=10"></script>
 </body>
 </html>

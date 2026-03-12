@@ -23,11 +23,13 @@ public class ChargebeeService {
     private final String apiKey;
 
     private final ZoneId siteTimezone;
+    private final String defaultTaxRate;
 
     public ChargebeeService(
             @Value("${chargebee.site:your-site-test}") String site,
             @Value("${chargebee.api-key:test_xxxxxxxx}") String apiKey,
-            @Value("${chargebee.timezone:Asia/Kolkata}") String timezone) {
+            @Value("${chargebee.timezone:Asia/Kolkata}") String timezone,
+            @Value("${chargebee.default-tax-rate:}") String defaultTaxRate) {
         this.baseUrl = "https://" + site + ".chargebee.com/api/v2";
         this.apiKey = apiKey;
         ZoneId zone;
@@ -37,6 +39,7 @@ public class ChargebeeService {
             zone = ZoneId.of("Asia/Kolkata");
         }
         this.siteTimezone = zone;
+        this.defaultTaxRate = defaultTaxRate != null && !defaultTaxRate.isBlank() ? defaultTaxRate : null;
     }
 
     private HttpHeaders authHeaders() {
@@ -65,6 +68,96 @@ public class ChargebeeService {
             result.add((Map<String, Object>) entry.get("subscription"));
         }
         return result;
+    }
+
+    public Map<String, Object> getSubscriptionDetails(String subscriptionId) {
+        Map<String, Object> sub = getSubscription(subscriptionId);
+        List<Ramp> ramps = listRamps(subscriptionId);
+        return buildSubscriptionDetailsCard(sub, ramps);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> buildSubscriptionDetailsCard(Map<String, Object> sub, List<Ramp> ramps) {
+        Map<String, Object> card = new java.util.LinkedHashMap<>();
+        card.put("id", sub.get("id"));
+        card.put("status", sub.get("status"));
+        card.put("currencyCode", sub.getOrDefault("currency_code", "USD"));
+
+        // Contract term - use effective end date considering ramps (billing period changes)
+        Long contractStart = null;
+        Long rawContractEnd = null;
+        if (sub.get("contract_term") instanceof Map<?, ?> ct) {
+            Map<String, Object> ctMap = (Map<String, Object>) ct;
+            if (ctMap.get("contract_start") != null) contractStart = ((Number) ctMap.get("contract_start")).longValue();
+            if (ctMap.get("contract_end") != null) rawContractEnd = ((Number) ctMap.get("contract_end")).longValue();
+        }
+        if (contractStart == null) contractStart = sub.get("current_term_start") != null ? ((Number) sub.get("current_term_start")).longValue() : null;
+        if (rawContractEnd == null) rawContractEnd = sub.get("current_term_end") != null ? ((Number) sub.get("current_term_end")).longValue() : null;
+
+        SimulatedSubscription simSub = Simulator.toSimulatedSubscription(sub);
+        Long effectiveContractEnd = Simulator.computeEffectiveContractEnd(simSub, ramps, siteTimezone);
+        Long contractEnd = effectiveContractEnd != null ? effectiveContractEnd : rawContractEnd;
+
+        card.put("contractStart", contractStart);
+        card.put("contractEnd", contractEnd);
+
+        // Billing (from plan item or subscription root)
+        int period = 1;
+        String unit = "month";
+        List<Map<String, Object>> items = (List<Map<String, Object>>) sub.getOrDefault("subscription_items", List.of());
+        var planItem = items.stream().filter(i -> "plan".equals(i.get("item_type"))).findFirst().orElse(Map.<String, Object>of());
+        if (planItem.get("billing_period") != null) period = ((Number) planItem.get("billing_period")).intValue();
+        else if (sub.get("billing_period") != null) period = ((Number) sub.get("billing_period")).intValue();
+        if (planItem.get("billing_period_unit") != null) unit = (String) planItem.get("billing_period_unit");
+        else if (sub.get("billing_period_unit") != null) unit = (String) sub.get("billing_period_unit");
+        card.put("billingPeriod", period);
+        card.put("billingPeriodUnit", unit);
+        card.put("billingDisplay", formatBillingDisplay(period, unit));
+
+        // Tax - Chargebee subscription doesn't expose tax rate; use config default if set
+        card.put("taxRate", defaultTaxRate);
+
+        // Upcoming changes from ramps
+        List<String> upcomingChanges = new ArrayList<>();
+        for (Ramp r : ramps.stream().filter(r -> "scheduled".equals(r.status())).toList()) {
+            String dateStr = formatEpochDate(r.effectiveFrom());
+            if (r.itemsToUpdate() != null) {
+                for (Ramp.ItemToUpdate u : r.itemsToUpdate()) {
+                    if (u.quantity() != null) upcomingChanges.add("Quantity changes to " + u.quantity() + " on " + dateStr);
+                    else if (u.unitPrice() != null) upcomingChanges.add("Price changes on " + dateStr);
+                    else if (u.billingPeriod() != null) upcomingChanges.add("Billing period changes on " + dateStr);
+                    else upcomingChanges.add("Item updated on " + dateStr);
+                }
+            }
+            if (r.itemsToAdd() != null) {
+                for (Ramp.ItemToAdd a : r.itemsToAdd()) {
+                    String qty = a.quantity() != null ? " (qty " + a.quantity() + ")" : "";
+                    upcomingChanges.add("Add " + (a.itemPriceId() != null ? a.itemPriceId() : "item") + qty + " on " + dateStr);
+                }
+            }
+            if (r.itemsToRemove() != null) {
+                for (String itemId : r.itemsToRemove()) {
+                    upcomingChanges.add("Remove " + itemId + " on " + dateStr);
+                }
+            }
+        }
+        card.put("upcomingChanges", upcomingChanges);
+        card.put("timezone", siteTimezone.getId());
+        return card;
+    }
+
+    private String formatBillingDisplay(int period, String unit) {
+        return switch (unit.toLowerCase()) {
+            case "month" -> period == 1 ? "Monthly" : "Every " + period + " months";
+            case "year" -> period == 1 ? "Yearly" : "Every " + period + " years";
+            case "week" -> period == 1 ? "Weekly" : "Every " + period + " weeks";
+            case "day" -> period == 1 ? "Daily" : "Every " + period + " days";
+            default -> period + " " + unit + "(s)";
+        };
+    }
+
+    private String formatEpochDate(long epochSec) {
+        return java.time.Instant.ofEpochSecond(epochSec).atZone(siteTimezone).format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy"));
     }
 
     public Map<String, Object> getSubscription(String subscriptionId) {
@@ -117,16 +210,21 @@ public class ChargebeeService {
         }
     }
 
-    public Simulator.SimulationResult simulate(String subscriptionId, int months) {
+    public Simulator.SimulationResult simulate(String subscriptionId, long simulationStart, long simulationEnd) {
         Map<String, Object> subMap = getSubscription(subscriptionId);
         List<Ramp> ramps = listRamps(subscriptionId);
 
         SimulatedSubscription sub = Simulator.toSimulatedSubscription(subMap);
-        return Simulator.simulate(sub, ramps, months, siteTimezone);
+        Long subscriptionEndDate = Simulator.subscriptionEndDate(subMap);
+        Integer taxRate = null;
+        if (defaultTaxRate != null && !defaultTaxRate.isBlank()) {
+            try { taxRate = Integer.parseInt(defaultTaxRate); } catch (NumberFormatException ignored) {}
+        }
+        return Simulator.simulate(sub, ramps, simulationStart, simulationEnd, subscriptionEndDate, siteTimezone, taxRate);
     }
 
-    public Simulator.SimulationResult validateGhostOfMarch(String subscriptionId, String expectedCancelDate) {
-        Simulator.SimulationResult result = simulate(subscriptionId, 18);
+    public Simulator.SimulationResult validateGhostOfMarch(String subscriptionId, String expectedCancelDate, long simulationStart, long simulationEnd) {
+        Simulator.SimulationResult result = simulate(subscriptionId, simulationStart, simulationEnd);
         var lastEvent = result.events().isEmpty() ? null : result.events().get(result.events().size() - 1);
 
         boolean passed = lastEvent != null
@@ -144,7 +242,9 @@ public class ChargebeeService {
                 result.customerId(),
                 result.simulationStart(),
                 result.simulationEnd(),
+                result.subscriptionEndDate(),
                 result.events(),
+                result.monthlyBreakdowns(),
                 result.chargebeeUiNextBilling(),
                 result.hivesightNextBilling(),
                 result.currencyCode(),
