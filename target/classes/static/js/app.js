@@ -204,17 +204,7 @@ function buildBatchExecutiveSummaryCsv(results) {
     return rows.join('\r\n');
 }
 
-/** Derive full-month period label from monthLabel (e.g. "November 2026" -> "Nov 1–30") when periodLabel is not set. */
-function fullMonthPeriodLabel(monthLabel) {
-    if (!monthLabel || typeof monthLabel !== 'string') return monthLabel || '';
-    const d = new Date(monthLabel + ' 1');
-    if (isNaN(d.getTime())) return monthLabel;
-    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-    const shortMon = d.toLocaleString('en-US', { month: 'short' });
-    return shortMon + ' 1–' + lastDay;
-}
-
-/** Build CSV for SHEET 2 - Monthly Simulation (Detailed View): one row per subscription per month (or per period for proration splits). */
+/** Build CSV for SHEET 2 - Monthly Simulation (Detailed View): one row per subscription per month. */
 function buildBatchMonthlyDetailedCsv(results) {
     if (!results || results.length === 0) return '';
 
@@ -224,7 +214,7 @@ function buildBatchMonthlyDetailedCsv(results) {
     rows.push(`Generated On: ${generatedOn}`);
     rows.push('');
 
-    const header = ['Subscription', 'Month', 'Period', 'Unit Price', 'Qty', 'Subtotal', 'Discount', 'Tax', 'Total', 'Change Type'];
+    const header = ['Subscription', 'Month', 'Unit Price', 'Qty', 'Subtotal', 'Discount', 'Tax', 'Total', 'Proration', 'Change'];
     rows.push(header.map(csvEscape).join(','));
 
     results.forEach(data => {
@@ -233,9 +223,8 @@ function buildBatchMonthlyDetailedCsv(results) {
         const subId = data.subscriptionId ?? '';
 
         breakdowns.forEach(b => {
-            const period = b.periodLabel != null ? b.periodLabel : fullMonthPeriodLabel(b.monthLabel);
-            const isProrationRow = b.periodLabel != null || (b.changes || []).some(c => /proration|prorate/i.test(String(c)));
-            const changeType = isProrationRow ? 'Proration' : ((b.changes && b.changes.length > 0) ? b.changes[0] : 'None');
+            const hasProration = (b.changes || []).some(c => /proration|prorate/i.test(String(c)));
+            const changeStr = (b.changes && b.changes.length > 0) ? b.changes.join('; ') : 'None';
 
             const stripCurrency = (s) => (s || '').replace(/\$/g, '').trim();
             const unitPriceDisplay = b.unitPrice != null ? stripCurrency(formatAmount(b.unitPrice, currencyCode)) : '';
@@ -248,14 +237,14 @@ function buildBatchMonthlyDetailedCsv(results) {
             const row = [
                 subId,
                 b.monthLabel ?? '',
-                period,
                 unitPriceDisplay || (b.unitPrice != null ? b.unitPrice : ''),
                 b.quantity != null ? b.quantity : '',
                 subtotalDisplay || (b.subtotalCents != null ? b.subtotalCents : ''),
                 discountDisplay,
                 taxDisplay || (b.taxCents != null ? b.taxCents : ''),
                 totalDisplay || (b.totalCents != null ? b.totalCents : ''),
-                changeType
+                hasProration ? 'Yes' : 'No',
+                changeStr
             ];
             rows.push(row.map(csvEscape).join(','));
         });
@@ -311,7 +300,7 @@ function renderBatchCharts(results) {
         data: {
             labels: revenueData.map(d => d.id.length > 12 ? d.id.slice(0, 10) + '…' : d.id),
             datasets: [{
-                label: 'Projected revenue (18 mo)',
+                label: 'Projected revenue',
                 data: revenueData.map(d => d.revenue),
                 backgroundColor: 'rgba(40, 167, 69, 0.7)',
                 borderColor: 'rgba(40, 167, 69, 1)',
@@ -585,35 +574,6 @@ function renderMonthlyBreakdown(data) {
 
     container.classList.remove('d-none');
 
-    // Option A style: table with split rows (Month, Period, Unit Price, Qty, Subtotal, Total, Change Type)
-    const periodLabel = (b) => b.periodLabel != null ? b.periodLabel : fullMonthPeriodLabel(b.monthLabel);
-    const changeType = (b) => (b.periodLabel != null || (b.changes || []).some(c => /proration|prorate/i.test(String(c)))) ? 'Proration' : ((b.changes && b.changes.length > 0) ? b.changes[0] : 'None');
-
-    const tableRows = breakdowns.map(b => {
-        const period = periodLabel(b);
-        const change = changeType(b);
-        return `<tr>
-            <td>${escapeHtml(b.monthLabel ?? '')}</td>
-            <td>${escapeHtml(period)}</td>
-            <td>${formatAmount(b.unitPrice, currencyCode)}</td>
-            <td>${b.quantity != null ? b.quantity : ''}</td>
-            <td>${formatAmount(b.subtotalCents, currencyCode)}</td>
-            <td>${formatAmount(b.totalCents, currencyCode)}</td>
-            <td>${escapeHtml(change)}</td>
-        </tr>`;
-    }).join('');
-
-    const tableHtml = `
-        <div class="table-responsive mb-4">
-            <p class="small text-muted mb-2">Option A – Show Split Rows (Best)</p>
-            <table class="table table-bordered table-sm">
-                <thead class="table-light">
-                    <tr><th>Month</th><th>Period</th><th>Unit Price</th><th>Qty</th><th>Subtotal</th><th>Total</th><th>Change Type</th></tr>
-                </thead>
-                <tbody>${tableRows}</tbody>
-            </table>
-        </div>`;
-
     const breakdownCards = breakdowns.map(b => {
         const discountLine = b.discountCents > 0
             ? `<div class="d-flex justify-content-between"><span>Manual Discount:</span><span class="text-danger">-${formatAmount(b.discountCents, currencyCode)}</span></div>`
@@ -625,14 +585,11 @@ function renderMonthlyBreakdown(data) {
         const impactLine = b.impactVsPreviousCents != null
             ? `<div class="mt-2 small ${b.impactVsPreviousCents >= 0 ? 'text-success' : 'text-danger'}"><strong>Impact:</strong> ${formatAmount(Math.abs(b.impactVsPreviousCents), currencyCode)} ${b.impactVsPreviousCents >= 0 ? 'increase' : 'decrease'} vs previous month</div>`
             : '';
-        const period = b.periodLabel != null ? b.periodLabel : fullMonthPeriodLabel(b.monthLabel);
-        const change = changeType(b);
 
         return `
             <div class="card mb-3 monthly-breakdown-card">
-                <div class="card-header py-2 bg-light d-flex justify-content-between align-items-center">
-                    <strong>${escapeHtml(b.monthLabel ?? '')}</strong>
-                    ${b.periodLabel ? `<span class="badge bg-secondary">${escapeHtml(period)} — ${escapeHtml(change)}</span>` : ''}
+                <div class="card-header py-2 bg-light">
+                    <strong>${b.monthLabel}</strong>
                 </div>
                 <div class="card-body py-3 small">
                     <div class="mb-2">
@@ -645,7 +602,7 @@ function renderMonthlyBreakdown(data) {
                     </div>
                     <div class="mt-2">
                         <strong>Change:</strong>
-                        <ul class="mb-0 ps-3 mt-1">${(b.changes || []).map(c => `<li>${escapeHtml(String(c))}</li>`).join('')}</ul>
+                        <ul class="mb-0 ps-3 mt-1">${(b.changes || []).map(c => `<li>${c}</li>`).join('')}</ul>
                     </div>
                     ${impactLine}
                 </div>
@@ -659,19 +616,12 @@ function renderMonthlyBreakdown(data) {
                 <strong>Subscription cancelled</strong>
             </div>
             <div class="card-body py-3 small">
-                Subscription cancelled in <strong>${escapeHtml(cancelledMonth)}</strong>.
+                Subscription cancelled in <strong>${cancelledMonth}</strong>.
             </div>
         </div>`
         : '';
 
-    listEl.innerHTML = tableHtml + breakdownCards + cancellationCard;
-}
-
-function escapeHtml(s) {
-    if (s == null) return '';
-    const div = document.createElement('div');
-    div.textContent = s;
-    return div.innerHTML;
+    listEl.innerHTML = breakdownCards + cancellationCard;
 }
 
 function renderDetailedReport(data) {
