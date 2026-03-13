@@ -1,6 +1,229 @@
 const API_BASE = '/api';
 let lastSimulationData = null;
 
+/** Last simulation/validation result, used for Export CSV (single subscription). */
+let lastSimulationResult = null;
+
+/** Results from Simulate Batch: array of simulation result objects. When set, Export uses this for all handles. */
+let lastBatchResults = null;
+
+/** Escape a value for CSV (wrap in quotes if contains comma, quote, or newline). */
+function csvEscape(val) {
+    if (val == null || val === undefined) return '';
+    const s = String(val);
+    if (/[,"\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+}
+
+/** Parse month label (e.g. "Feb 2026") to sortable key (YYYY-MM). */
+function monthLabelToKey(label) {
+    if (!label || typeof label !== 'string') return '';
+    const parts = label.trim().split(/\s+/);
+    if (parts.length < 2) return label;
+    const months = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
+    const m = months[parts[0]];
+    const y = parseInt(parts[1], 10);
+    if (!m || !y) return label;
+    return `${y}-${String(m).padStart(2, '0')}`;
+}
+
+/** Build CSV for SHEET 1 - Executive Summary: one row per subscription, month columns, Total (Range), Transitions, Risk Level. */
+function buildBatchExecutiveSummaryCsv(results) {
+    if (!results || results.length === 0) return '';
+    const breakdownsBySub = new Map();
+    const allMonthLabels = new Set();
+    results.forEach(data => {
+        const list = data.monthlyBreakdowns || [];
+        breakdownsBySub.set(data.subscriptionId ?? '', list);
+        list.forEach(b => { if (b.monthLabel) allMonthLabels.add(b.monthLabel); });
+    });
+    const sortedMonths = [...allMonthLabels].sort((a, b) => monthLabelToKey(a).localeCompare(monthLabelToKey(b)));
+    const simulationStart = results[0]?.simulationStart;
+    const simulationEnd = results[0]?.simulationEnd;
+    const rangeStr = simulationStart && simulationEnd ? `${formatDate(simulationStart)} → ${formatDate(simulationEnd)}` : '—';
+    const generatedOn = new Date().toISOString().slice(0, 10);
+    const rows = [];
+    rows.push('SHEET 1 - Summary (Executive View)');
+    rows.push(`Simulation Range: ${rangeStr}`);
+    rows.push(`Generated On: ${generatedOn}`);
+    rows.push('');
+    const header = ['Subscription', 'Contract End', ...sortedMonths, 'Total (Range)', 'Transitions', 'Risk Level'];
+    rows.push(header.map(csvEscape).join(','));
+    results.forEach(data => {
+        const breakdowns = breakdownsBySub.get(data.subscriptionId ?? '') || [];
+        const monthToTotal = new Map();
+        let totalRange = 0;
+        const allChanges = new Set();
+        breakdowns.forEach(b => {
+            if (b.monthLabel) {
+                const totalCents = b.totalCents != null ? b.totalCents : 0;
+                monthToTotal.set(b.monthLabel, totalCents);
+                totalRange += totalCents;
+                (b.changes || []).forEach(c => { if (c) allChanges.add(c); });
+            }
+        });
+        const contractEnd = data.subscriptionEndDate ? formatDateLong(data.subscriptionEndDate, data.timezone) : '—';
+        const cancelled = (data.events || []).some(e => e.type === 'cancelled');
+        let riskLevel = 'Low';
+        if (cancelled || allChanges.size > 2) riskLevel = 'High';
+        else if (allChanges.size > 0) riskLevel = 'Medium';
+        const transitions = allChanges.size > 0 ? [...allChanges].join(', ') : 'None';
+        const currencyCode = data.currencyCode || 'USD';
+        const row = [
+            data.subscriptionId ?? '',
+            contractEnd,
+            ...sortedMonths.map(m => {
+                const cents = monthToTotal.get(m);
+                if (cents == null) return '';
+                const s = formatAmount(cents, currencyCode);
+                return s ? s.replace(/\$/g, '').trim() : cents;
+            }),
+            totalRange != null ? formatAmount(totalRange, currencyCode).replace(/\$/g, '').trim() : '',
+            transitions,
+            riskLevel
+        ];
+        rows.push(row.map(csvEscape).join(','));
+    });
+    return rows.join('\r\n');
+}
+
+/** Build CSV for SHEET 2 - Monthly Simulation (Detailed View): one row per subscription per month. */
+function buildBatchMonthlyDetailedCsv(results) {
+    if (!results || results.length === 0) return '';
+    const generatedOn = new Date().toISOString().slice(0, 10);
+    const rows = [];
+    rows.push('SHEET 2 - Monthly Simulation (Detailed View)');
+    rows.push(`Generated On: ${generatedOn}`);
+    rows.push('');
+    const header = ['Subscription', 'Month', 'Unit Price', 'Qty', 'Subtotal', 'Discount', 'Tax', 'Total', 'Proration', 'Change'];
+    rows.push(header.map(csvEscape).join(','));
+    results.forEach(data => {
+        const breakdowns = data.monthlyBreakdowns || [];
+        const currencyCode = data.currencyCode || 'USD';
+        const subId = data.subscriptionId ?? '';
+        breakdowns.forEach(b => {
+            const hasProration = (b.changes || []).some(c => /proration|prorate/i.test(String(c)));
+            const changeStr = (b.changes && b.changes.length > 0) ? b.changes.join('; ') : 'None';
+            const stripCurrency = (s) => (s || '').replace(/\$/g, '').trim();
+            const unitPriceDisplay = b.unitPrice != null ? stripCurrency(formatAmount(b.unitPrice, currencyCode)) : '';
+            const subtotalDisplay = b.subtotalCents != null ? stripCurrency(formatAmount(b.subtotalCents, currencyCode)) : '';
+            const discountVal = b.discountCents != null ? b.discountCents : 0;
+            const discountDisplay = discountVal !== 0 ? (discountVal > 0 ? '-' : '') + stripCurrency(formatAmount(Math.abs(discountVal), currencyCode)) : '0';
+            const taxDisplay = b.taxCents != null ? stripCurrency(formatAmount(b.taxCents, currencyCode)) : '';
+            const totalDisplay = b.totalCents != null ? stripCurrency(formatAmount(b.totalCents, currencyCode)) : '';
+            const row = [
+                subId,
+                b.monthLabel ?? '',
+                unitPriceDisplay || (b.unitPrice != null ? b.unitPrice : ''),
+                b.quantity != null ? b.quantity : '',
+                subtotalDisplay || (b.subtotalCents != null ? b.subtotalCents : ''),
+                discountDisplay,
+                taxDisplay || (b.taxCents != null ? b.taxCents : ''),
+                totalDisplay || (b.totalCents != null ? b.totalCents : ''),
+                hasProration ? 'Yes' : 'No',
+                changeStr
+            ];
+            rows.push(row.map(csvEscape).join(','));
+        });
+    });
+    return rows.join('\r\n');
+}
+
+/** Trigger download of a blob as a file. */
+function downloadBlob(blob, filename) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+/** Chart.js instances for batch charts; destroyed when switching to single or re-running batch. */
+let batchRevenueChartInstance = null;
+let batchOutcomeChartInstance = null;
+
+function hideBatchCharts() {
+    if (batchRevenueChartInstance) {
+        batchRevenueChartInstance.destroy();
+        batchRevenueChartInstance = null;
+    }
+    if (batchOutcomeChartInstance) {
+        batchOutcomeChartInstance.destroy();
+        batchOutcomeChartInstance = null;
+    }
+    const el = document.getElementById('batchChartsSection');
+    if (el) el.classList.add('d-none');
+}
+
+/** Render bar chart (revenue by subscription) and pie chart (cancelled vs active) for batch results. */
+function renderBatchCharts(results) {
+    if (!window.Chart || results.length === 0) return;
+    hideBatchCharts();
+    const revenueData = results.map(r => {
+        const total = (r.events || []).filter(e => e.amount != null && e.amount !== undefined).reduce((sum, e) => sum + e.amount, 0);
+        return { id: r.subscriptionId || '—', revenue: total, currencyCode: r.currencyCode || 'USD' };
+    });
+    const cancelledCount = results.filter(r => (r.events || []).some(e => e.type === 'cancelled')).length;
+    const activeCount = results.length - cancelledCount;
+    const sectionEl = document.getElementById('batchChartsSection');
+    if (!sectionEl) return;
+    sectionEl.classList.remove('d-none');
+    const barCtx = document.getElementById('batchRevenueChart')?.getContext('2d');
+    if (barCtx) {
+        batchRevenueChartInstance = new Chart(barCtx, {
+            type: 'bar',
+            data: {
+                labels: revenueData.map(d => d.id.length > 12 ? d.id.slice(0, 10) + '…' : d.id),
+                datasets: [{
+                    label: 'Projected revenue',
+                    data: revenueData.map(d => d.revenue),
+                    backgroundColor: 'rgba(40, 167, 69, 0.7)',
+                    borderColor: 'rgba(40, 167, 69, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                const d = revenueData[ctx.dataIndex];
+                                return formatAmount(d.revenue, d.currencyCode);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { ticks: { maxRotation: 45, minRotation: 45 } },
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+    }
+    const pieCtx = document.getElementById('batchOutcomeChart')?.getContext('2d');
+    if (pieCtx) {
+        batchOutcomeChartInstance = new Chart(pieCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Active through window', 'End in cancellation'],
+                datasets: [{
+                    data: [activeCount, cancelledCount],
+                    backgroundColor: ['rgba(40, 167, 69, 0.8)', 'rgba(220, 53, 69, 0.8)'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+    }
+}
+
 function showLoading(show) {
     document.getElementById('loading').classList.toggle('d-none', !show);
 }
@@ -379,6 +602,7 @@ function renderValidationBadge(passed, message, data) {
 // Set default start/end months: current month to 18 months from now
 document.addEventListener('DOMContentLoaded', () => {
     checkAiStatus();
+    switchAiInsightsMode();
     const now = new Date();
     const startEl = document.getElementById('startMonth');
     const endEl = document.getElementById('endMonth');
@@ -527,11 +751,19 @@ document.getElementById('btnSimulate').addEventListener('click', async () => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Simulation failed');
         lastSimulationData = data;
+        lastSimulationResult = data;
+        lastBatchResults = null;
+        hideBatchCharts();
+        const btnExport = document.getElementById('btnExport');
+        if (btnExport) btnExport.disabled = false;
+        const exportReadyMsg = document.getElementById('exportReadyMessage');
+        if (exportReadyMsg) exportReadyMsg.classList.remove('d-none');
         renderTimeline(data.events || [], data.timezone);
         renderDetailedReport(data);
         renderInvoiceTrendChart(data);
         renderMonthlyBreakdown(data);
         renderValidationBadge(null, null, null);
+        switchAiInsightsMode();
     } catch (e) {
         showError(e.message);
     } finally {
@@ -557,16 +789,211 @@ document.getElementById('btnValidate').addEventListener('click', async () => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Validation failed');
         lastSimulationData = data;
+        lastSimulationResult = data;
+        lastBatchResults = null;
+        hideBatchCharts();
+        const btnExport = document.getElementById('btnExport');
+        if (btnExport) btnExport.disabled = false;
+        const exportReadyMsg = document.getElementById('exportReadyMessage');
+        if (exportReadyMsg) exportReadyMsg.classList.remove('d-none');
         renderTimeline(data.events || [], data.timezone);
         renderDetailedReport(data);
         renderInvoiceTrendChart(data);
         renderMonthlyBreakdown(data);
         renderValidationBadge(data.validationPassed, data.validationMessage, data);
+        switchAiInsightsMode();
     } catch (e) {
         showError(e.message);
     } finally {
         showLoading(false);
     }
+});
+
+document.getElementById('btnSimulateBatch').addEventListener('click', async () => {
+    const imported = window.importedSubscriptions;
+    if (!imported || imported.length === 0) {
+        showError('Import a CSV with subscription IDs first.');
+        return;
+    }
+    hideError();
+    const loadingEl = document.getElementById('loading');
+    const msgEl = document.getElementById('loadingMessage');
+    if (loadingEl) loadingEl.classList.remove('d-none');
+    const results = [];
+    const errors = [];
+    for (let i = 0; i < imported.length; i++) {
+        const { subscription_id: id } = imported[i];
+        if (msgEl) msgEl.textContent = `Simulating ${i + 1} of ${imported.length}: ${id}...`;
+        try {
+            const qs = getSimulationParams();
+            const res = await fetch(`${API_BASE}/simulate/${encodeURIComponent(id)}${qs ? '?' + qs : ''}`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Simulation failed');
+            results.push(data);
+        } catch (e) {
+            errors.push({ id, message: e.message });
+        }
+    }
+    if (loadingEl) loadingEl.classList.add('d-none');
+    lastBatchResults = results;
+    lastSimulationResult = null;
+    lastSimulationData = results.length === 1 ? results[0] : lastSimulationData;
+    const btnExport = document.getElementById('btnExport');
+    if (btnExport) btnExport.disabled = results.length === 0;
+    const exportReadyMsg = document.getElementById('exportReadyMessage');
+    if (exportReadyMsg) exportReadyMsg.classList.toggle('d-none', results.length === 0);
+    const detailedReport = document.getElementById('detailedReport');
+    if (detailedReport) detailedReport.classList.add('d-none');
+    const timeline = document.getElementById('timeline');
+    if (timeline) timeline.innerHTML = '';
+    const validationResult = document.getElementById('validationResult');
+    if (validationResult) validationResult.classList.add('d-none');
+    const validationBadge = document.getElementById('validationBadge');
+    if (validationBadge) validationBadge.classList.add('d-none');
+    if (results.length > 0) {
+        renderBatchCharts(results);
+        switchAiInsightsMode();
+    }
+    if (errors.length > 0) {
+        showError(`Batch completed. ${results.length} succeeded, ${errors.length} failed: ${errors.map(e => e.id + ': ' + e.message).join('; ')}`);
+    } else if (results.length === 0) {
+        showError('All simulations failed.');
+    }
+});
+
+function getExportResults() {
+    if (lastBatchResults && lastBatchResults.length > 0) return lastBatchResults;
+    if (lastSimulationResult) return [lastSimulationResult];
+    return null;
+}
+
+document.getElementById('exportExecutive').addEventListener('click', (e) => {
+    e.preventDefault();
+    const results = getExportResults();
+    if (!results || results.length === 0) return;
+    const csv = buildBatchExecutiveSummaryCsv(results);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = results.length > 1
+        ? `hivesight_batch_executive_${results.length}_subscriptions_${dateStr}.csv`
+        : `hivesight_${(results[0].subscriptionId || 'export').replace(/[^a-zA-Z0-9-_]/g, '_')}_executive_${dateStr}.csv`;
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), filename);
+});
+
+document.getElementById('exportMonthly').addEventListener('click', (e) => {
+    e.preventDefault();
+    const results = getExportResults();
+    if (!results || results.length === 0) return;
+    const csv = buildBatchMonthlyDetailedCsv(results);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = results.length > 1
+        ? `hivesight_batch_monthly_detailed_${results.length}_subscriptions_${dateStr}.csv`
+        : `hivesight_${(results[0].subscriptionId || 'export').replace(/[^a-zA-Z0-9-_]/g, '_')}_monthly_detailed_${dateStr}.csv`;
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), filename);
+});
+
+document.getElementById('btnImport').addEventListener('click', () => {
+    document.getElementById('fileImport').click();
+});
+
+document.getElementById('fileImport').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+        try {
+            const text = reader.result;
+            const lines = text.split(/\r?\n/).filter(l => l.trim());
+            if (lines.length < 2) {
+                showError('CSV must have a header row and at least one data row.');
+                e.target.value = '';
+                return;
+            }
+            function parseCsvRow(line) {
+                const out = [];
+                let cur = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    const c = line[i];
+                    if (c === '"') inQuotes = !inQuotes;
+                    else if (c === ',' && !inQuotes) { out.push(cur.trim().replace(/^"|"$/g, '').replace(/""/g, '"')); cur = ''; }
+                    else cur += c;
+                }
+                out.push(cur.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+                return out;
+            }
+            const header = parseCsvRow(lines[0]).map(h => h.toLowerCase().trim());
+            const subIdIdx = header.findIndex(h => h === 'subscription_id' || h === 'subscription id');
+            const expectedIdx = header.findIndex(h => h === 'expected_cancel_date' || h === 'expected cancel date' || h === 'expected_cancel' || h === 'expected cancel');
+            if (subIdIdx < 0) {
+                showError('CSV must have a "subscription_id" column.');
+                e.target.value = '';
+                return;
+            }
+            const rows = [];
+            for (let i = 1; i < lines.length; i++) {
+                const cells = parseCsvRow(lines[i]);
+                const subId = (cells[subIdIdx] || '').trim().replace(/^"|"$/g, '');
+                if (!subId) continue;
+                const expected = expectedIdx >= 0 ? (cells[expectedIdx] || '').trim().replace(/^"|"$/g, '') : '';
+                rows.push({ subscription_id: subId, expected_cancel_date: expected });
+            }
+            if (rows.length === 0) {
+                showError('No valid subscription_id values found in CSV.');
+                e.target.value = '';
+                return;
+            }
+            hideError();
+            window.importedSubscriptions = rows;
+            const btnSimulateBatch = document.getElementById('btnSimulateBatch');
+            if (btnSimulateBatch) btnSimulateBatch.disabled = false;
+            const btnSimulate = document.getElementById('btnSimulate');
+            const btnValidate = document.getElementById('btnValidate');
+            if (btnSimulate) btnSimulate.disabled = true;
+            if (btnValidate) btnValidate.disabled = true;
+            const importedMsg = document.getElementById('importedMessage');
+            if (importedMsg) {
+                importedMsg.innerHTML = `${rows.length} subscription(s) imported. Click Simulate Batch to run. <a href="#" id="clearImport" class="alert-link">Clear import</a>`;
+                importedMsg.classList.remove('d-none');
+                const clearBtn = document.getElementById('clearImport');
+                if (clearBtn) clearBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    window.importedSubscriptions = [];
+                    if (btnSimulateBatch) btnSimulateBatch.disabled = true;
+                    if (btnSimulate) btnSimulate.disabled = false;
+                    if (btnValidate) btnValidate.disabled = false;
+                    const listEl = document.getElementById('importedList');
+                    const itemsEl = document.getElementById('importedListItems');
+                    if (listEl) listEl.classList.add('d-none');
+                    if (itemsEl) itemsEl.innerHTML = '';
+                    if (importedMsg) importedMsg.classList.add('d-none');
+                });
+            }
+            const listEl = document.getElementById('importedList');
+            const itemsEl = document.getElementById('importedListItems');
+            if (listEl && itemsEl) {
+                itemsEl.innerHTML = rows.map((r) => `
+                    <div class="subscription-option imported-option" data-id="${r.subscription_id}" data-expected="${r.expected_cancel_date || ''}">
+                        <strong>${r.subscription_id}</strong>${r.expected_cancel_date ? ` — cancel: ${r.expected_cancel_date}` : ''}
+                    </div>
+                `).join('');
+                listEl.classList.remove('d-none');
+                itemsEl.querySelectorAll('.imported-option').forEach(el => {
+                    el.addEventListener('click', () => {
+                        itemsEl.querySelectorAll('.imported-option').forEach(x => x.classList.remove('selected'));
+                        el.classList.add('selected');
+                        const subInput = document.getElementById('subscriptionId');
+                        const expectedInput = document.getElementById('expectedCancel');
+                        if (subInput) subInput.value = el.dataset.id;
+                        if (expectedInput) expectedInput.value = el.dataset.expected || '';
+                    });
+                });
+            }
+        } catch (err) {
+            showError('Invalid CSV: ' + err.message);
+        }
+        e.target.value = '';
+    };
+    reader.readAsText(file, 'UTF-8');
 });
 
 async function checkAiStatus() {
@@ -598,6 +1025,33 @@ async function callAi(endpoint, body = {}) {
     const json = await res.json();
     if (!res.ok) throw new Error(json.message || json.error || 'AI request failed');
     return json;
+}
+
+async function callAiBatch(endpoint, body = {}) {
+    const results = body.results !== undefined ? body.results : lastBatchResults;
+    const payload = { ...body, results: results || [] };
+    const res = await fetch(`${API_BASE}/ai/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || json.error || 'AI request failed');
+    return json;
+}
+
+function switchAiInsightsMode() {
+    const singleEl = document.getElementById('aiInsightsSingle');
+    const batchEl = document.getElementById('aiInsightsBatch');
+    if (!singleEl || !batchEl) return;
+    const isBatch = lastBatchResults && lastBatchResults.length > 0;
+    if (isBatch) {
+        singleEl.classList.add('d-none');
+        batchEl.classList.remove('d-none');
+    } else {
+        singleEl.classList.remove('d-none');
+        batchEl.classList.add('d-none');
+    }
 }
 
 function setButtonLoading(btn, loading) {
@@ -704,6 +1158,102 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnChatSend.click(); });
+    }
+
+    // Batch AI Summary
+    const btnBatchSummary = document.getElementById('btnAiBatchSummary');
+    if (btnBatchSummary) {
+        btnBatchSummary.dataset.originalText = btnBatchSummary.textContent;
+        btnBatchSummary.addEventListener('click', async () => {
+            if (!lastBatchResults || lastBatchResults.length === 0) { showError('Run a batch simulation first'); return; }
+            hideError();
+            setButtonLoading(btnBatchSummary, true);
+            const el = document.getElementById('aiBatchSummary');
+            el.classList.remove('d-none');
+            el.querySelector('.card-body').innerHTML = '<small class="text-muted">Generating batch summary...</small>';
+            try {
+                const json = await callAiBatch('summarize-batch', { results: lastBatchResults });
+                el.querySelector('.card-body').innerHTML = `<p class="mb-0">${escapeHtml(json.summary || '')}</p>`;
+            } catch (e) {
+                el.querySelector('.card-body').innerHTML = `<p class="text-danger mb-0">${escapeHtml(e.message)}</p>`;
+            }
+            setButtonLoading(btnBatchSummary, false);
+        });
+    }
+
+    // Batch AI Alerts
+    const btnBatchAlerts = document.getElementById('btnAiBatchAlerts');
+    if (btnBatchAlerts) {
+        btnBatchAlerts.dataset.originalText = btnBatchAlerts.textContent;
+        btnBatchAlerts.addEventListener('click', async () => {
+            if (!lastBatchResults || lastBatchResults.length === 0) { showError('Run a batch simulation first'); return; }
+            hideError();
+            setButtonLoading(btnBatchAlerts, true);
+            const el = document.getElementById('aiBatchAlerts');
+            el.classList.remove('d-none');
+            el.innerHTML = '<small class="text-muted">Analyzing batch...</small>';
+            try {
+                const json = await callAiBatch('alerts-batch', { results: lastBatchResults });
+                const alerts = json.alerts || [];
+                if (alerts.length === 0) {
+                    el.innerHTML = '<div class="alert alert-info py-2 mb-0 small">No significant batch alerts detected.</div>';
+                } else {
+                    el.innerHTML = alerts.map(a => {
+                        const cls = a.severity === 'danger' ? 'alert-danger' : a.severity === 'warning' ? 'alert-warning' : 'alert-info';
+                        return `<div class="alert ${cls} py-2 mb-2 small"><strong>${escapeHtml(a.title || 'Alert')}</strong>: ${escapeHtml(a.message || '')}</div>`;
+                    }).join('');
+                }
+            } catch (e) {
+                el.innerHTML = `<div class="alert alert-danger py-2 mb-0 small">${escapeHtml(e.message)}</div>`;
+            }
+            setButtonLoading(btnBatchAlerts, false);
+        });
+    }
+
+    // Batch AI Chat
+    const batchChatToggle = document.getElementById('btnBatchChatToggle');
+    const batchChatPanel = document.getElementById('batchChatPanel');
+    const batchChatMessages = document.getElementById('batchChatMessages');
+    const batchChatInput = document.getElementById('batchChatInput');
+    const btnBatchChatSend = document.getElementById('btnBatchChatSend');
+
+    if (batchChatToggle && batchChatPanel) {
+        batchChatToggle.addEventListener('click', () => {
+            const collapsed = batchChatPanel.classList.contains('collapse');
+            batchChatPanel.classList.toggle('collapse', !collapsed);
+            batchChatToggle.textContent = collapsed ? 'Collapse' : 'Expand';
+        });
+    }
+
+    if (btnBatchChatSend && batchChatInput && batchChatMessages) {
+        const addBatchChatMsg = (role, text) => {
+            const div = document.createElement('div');
+            div.className = `small mb-2 ${role === 'user' ? 'text-end' : ''}`;
+            div.innerHTML = `<span class="badge ${role === 'user' ? 'bg-primary' : 'bg-secondary'}">${role === 'user' ? 'You' : 'AI'}</span> ${escapeHtml(text)}`;
+            batchChatMessages.appendChild(div);
+            batchChatMessages.scrollTop = batchChatMessages.scrollHeight;
+        };
+
+        btnBatchChatSend.addEventListener('click', async () => {
+            const msg = batchChatInput.value.trim();
+            if (!msg) return;
+            if (!lastBatchResults || lastBatchResults.length === 0) { showError('Run a batch simulation first'); return; }
+            hideError();
+            batchChatInput.value = '';
+            addBatchChatMsg('user', msg);
+            batchChatMessages.insertAdjacentHTML('beforeend', '<div class="small mb-2 text-muted">AI is thinking...</div>');
+            const loadingEl = batchChatMessages.lastElementChild;
+            try {
+                const json = await callAiBatch('chat-batch', { message: msg, results: lastBatchResults });
+                loadingEl.remove();
+                addBatchChatMsg('assistant', json.response || 'No response.');
+            } catch (e) {
+                loadingEl.remove();
+                addBatchChatMsg('assistant', 'Error: ' + e.message);
+            }
+        });
+
+        batchChatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnBatchChatSend.click(); });
     }
 });
 

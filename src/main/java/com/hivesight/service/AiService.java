@@ -12,6 +12,7 @@ import org.springframework.web.client.RestTemplate;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -188,6 +189,93 @@ public class AiService {
             "Answer the user's question based on the simulation data. Be concise (2-5 sentences). Use totalProjectedRevenueDisplay and amountDisplay for currency values.",
             context, userMessage != null ? userMessage : "Tell me about this simulation");
         return callLlm(prompt);
+    }
+
+    /** Generate batch-level summary from multiple simulation results. */
+    public String generateBatchSummary(List<?> results) {
+        if (!enabled || results == null || results.isEmpty()) return null;
+        String context = buildBatchContext(results);
+        if (context == null || context.isBlank()) return "No batch data available.";
+        String prompt = String.format(
+            "You are a billing analyst. Summarize this BATCH of %d Chargebee subscription simulations.\n\n" +
+            "BATCH DATA:\n%s\n\n" +
+            "Write 5-8 sentences covering: (1) total projected revenue across all subscriptions, (2) how many end in cancellation vs stay active, " +
+            "(3) subscriptions with ramps/scheduled changes and their impact, (4) any high-value or high-risk subscriptions to highlight. " +
+            "Use exact values from the data. Output ONLY the insights. No preamble.",
+            results.size(), context);
+        return stripSummaryPreamble(callLlm(prompt));
+    }
+
+    /** Generate batch-level alerts (cross-subscription risks). */
+    public String generateBatchAlerts(List<?> results) {
+        if (!enabled || results == null || results.isEmpty()) return null;
+        String context = buildBatchContext(results);
+        if (context == null || context.isBlank()) return null;
+        String prompt = String.format(
+            "You are a billing risk analyst. Analyze this BATCH of %d subscription simulations and identify cross-subscription risks.\n\n" +
+            "BATCH DATA:\n%s\n\n" +
+            "Return a JSON array of alert objects. Each alert has: \"severity\" (info/warning/danger), \"title\" (short), \"message\" (1-2 sentences). " +
+            "Focus on: revenue concentration, cancellation risk, ramp timing across subs, outliers. Return ONLY the JSON array. If no significant alerts, return [].",
+            results.size(), context);
+        return callLlm(prompt);
+    }
+
+    /** Chat with batch context. */
+    public String chatBatch(List<?> results, String userMessage) {
+        if (!enabled || results == null || results.isEmpty()) return null;
+        String context = buildBatchContext(results);
+        if (context == null || context.isBlank()) return null;
+        String prompt = String.format(
+            "You are a helpful billing assistant for HiveSight. The user ran a BATCH simulation of %d subscriptions.\n\n" +
+            "BATCH DATA:\n%s\n\n" +
+            "User question: %s\n\n" +
+            "Answer based on the batch data. Be concise (2-5 sentences). Use exact values.",
+            results.size(), context, userMessage != null ? userMessage : "Summarize this batch");
+        return callLlm(prompt);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String buildBatchContext(List<?> results) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            long totalRevenueCents = 0;
+            int cancelledCount = 0;
+            int rampCount = 0;
+            int i = 0;
+            for (Object r : results) {
+                if (!(r instanceof Map)) continue;
+                Map<String, Object> m = (Map<String, Object>) r;
+                String subId = String.valueOf(m.getOrDefault("subscriptionId", "?"));
+                Object events = m.get("events");
+                long subRevenue = 0;
+                boolean cancelled = false;
+                long ramps = 0;
+                if (events instanceof List<?> evList) {
+                    for (Object e : evList) {
+                        if (e instanceof Map) {
+                            Map<?, ?> ev = (Map<?, ?>) e;
+                            if ("cancelled".equals(ev.get("type"))) cancelled = true;
+                            if ("ramp_applied".equals(ev.get("type"))) ramps++;
+                            Object amt = ev.get("amount");
+                            if (amt instanceof Number) subRevenue += ((Number) amt).longValue();
+                        }
+                    }
+                }
+                totalRevenueCents += subRevenue;
+                if (cancelled) cancelledCount++;
+                rampCount += (int) ramps;
+                String currency = (String) m.getOrDefault("currencyCode", "USD");
+                boolean zeroDec = List.of("JPY", "KRW", "VND", "CLP", "XOF", "XAF").contains(currency);
+                String revDisplay = formatCentsToDisplay(subRevenue, currency, zeroDec);
+                String outcome = cancelled ? "cancelled" : "active";
+                sb.append(String.format("Sub %d: %s | Revenue: %s | Outcome: %s | Ramps: %d\n", ++i, subId, revDisplay, outcome, ramps));
+            }
+            sb.append(String.format("\nTOTAL: %d subs | Total revenue: %s | Cancelled: %d | Active: %d | Total ramps: %d",
+                results.size(), formatCentsToDisplay(totalRevenueCents, "USD", false), cancelledCount, results.size() - cancelledCount, rampCount));
+            return sb.toString();
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
     }
 
     public String generateAlerts(Object simulationData) {

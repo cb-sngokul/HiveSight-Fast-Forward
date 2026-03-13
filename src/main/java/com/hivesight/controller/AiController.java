@@ -4,6 +4,7 @@ import com.hivesight.service.AiService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -66,6 +67,52 @@ public class AiController {
             Object data = body.get("data");
             String alertsJson = aiService.generateAlerts(data != null ? data : body);
             return ResponseEntity.ok(Map.of("alerts", parseAlerts(alertsJson)));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", "AI failed", "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/summarize-batch")
+    public ResponseEntity<?> summarizeBatch(@RequestBody Map<String, Object> body) {
+        if (!aiService.isEnabled()) {
+            return ResponseEntity.status(503).body(Map.of("error", "AI not configured", "message", "Set ai.openai.api-key in application.properties"));
+        }
+        try {
+            @SuppressWarnings("unchecked")
+            List<Object> results = (List<Object>) body.get("results");
+            String summary = aiService.generateBatchSummary(results != null ? results : List.of());
+            return ResponseEntity.ok(Map.of("summary", summary != null ? summary : "Unable to generate batch summary."));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", "AI failed", "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/alerts-batch")
+    public ResponseEntity<?> alertsBatch(@RequestBody Map<String, Object> body) {
+        if (!aiService.isEnabled()) {
+            return ResponseEntity.status(503).body(Map.of("error", "AI not configured", "message", "Set ai.openai.api-key in application.properties"));
+        }
+        try {
+            @SuppressWarnings("unchecked")
+            List<Object> results = (List<Object>) body.get("results");
+            String alertsJson = aiService.generateBatchAlerts(results != null ? results : List.of());
+            return ResponseEntity.ok(Map.of("alerts", parseAlerts(alertsJson)));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", "AI failed", "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/chat-batch")
+    public ResponseEntity<?> chatBatch(@RequestBody Map<String, Object> body) {
+        if (!aiService.isEnabled()) {
+            return ResponseEntity.status(503).body(Map.of("error", "AI not configured", "message", "Set ai.openai.api-key in application.properties"));
+        }
+        try {
+            String message = (String) body.get("message");
+            @SuppressWarnings("unchecked")
+            List<Object> results = (List<Object>) body.get("results");
+            String response = aiService.chatBatch(results != null ? results : List.of(), message);
+            return ResponseEntity.ok(Map.of("response", response != null ? response : "Unable to generate response."));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", "AI failed", "message", e.getMessage()));
         }
