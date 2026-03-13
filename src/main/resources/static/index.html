@@ -20,8 +20,7 @@
 
     <main class="container py-5">
         <div class="text-center mb-5">
-            <h1 class="display-5 fw-bold mb-2">Temporal Billing Validation Engine</h1>
-            <p class="lead text-muted">Simulate your Chargebee subscription lifecycle for a custom date range. Catch "time-bomb" errors before they occur.</p>
+            <h1 class="display-5 fw-bold mb-2">Billing Validation Engine</h1>
         </div>
 
         <div class="row g-4">
@@ -80,7 +79,7 @@
                                 Validate Ghost of March
                             </button>
                             <button class="btn btn-success" type="button" id="btnSimulateBatch" disabled title="Import a CSV with subscription IDs first">
-                                Simulate Batch (all imported)
+                                Simulate Batch
                             </button>
                         </div>
                         <div id="loading" class="text-center py-4 d-none">
@@ -102,8 +101,8 @@
                             <div class="dropdown">
                                 <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" id="btnExport" data-bs-toggle="dropdown" disabled title="Run a simulation first to export" aria-expanded="false">Export CSV</button>
                                 <ul class="dropdown-menu dropdown-menu-end" id="exportDropdownMenu" aria-labelledby="btnExport">
-                                    <li><a class="dropdown-item" href="#" id="exportExecutive" data-export-type="executive">1. Executive summary (CSV)</a></li>
-                                    <li><a class="dropdown-item" href="#" id="exportMonthly" data-export-type="monthly">2. Monthly detailed (CSV)</a></li>
+                                    <li><a class="dropdown-item" href="#" id="exportExecutive" data-export-type="executive">1. Executive summary</a></li>
+                                    <li><a class="dropdown-item" href="#" id="exportMonthly" data-export-type="monthly">2. Monthly detailed</a></li>
                                 </ul>
                             </div>
                             <span id="validationBadge" class="badge d-none"></span>
@@ -291,7 +290,7 @@
 
     <footer class="bg-light py-3 mt-5">
         <div class="container text-center text-muted small">
-            HiveSight — Hackathon Project | Chargebee Temporal Billing Validation
+            HiveSight — Hackathon Project | Chargebee Billing Validation
         </div>
     </footer>
 
