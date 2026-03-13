@@ -79,6 +79,7 @@ public class Simulator {
                 .toList();
 
         Object cancelledAt = sub.get("cancelled_at");
+        if (cancelledAt == null) cancelledAt = sub.get("cancel_at");
         Long trialEnd = sub.get("trial_end") != null ? ((Number) sub.get("trial_end")).longValue() : null;
         Long pauseDate = sub.get("pause_date") != null ? ((Number) sub.get("pause_date")).longValue() : null;
         Long resumeDate = sub.get("resume_date") != null ? ((Number) sub.get("resume_date")).longValue() : null;
@@ -174,12 +175,16 @@ public class Simulator {
     /**
      * Computes the subscription end date from Chargebee API response.
      * Returns null if the subscription renews indefinitely (no end).
-     * Sources: cancelled_at (scheduled cancel), contract_end when action is "cancel".
+     * Sources: cancelled_at, cancel_at (scheduled specific-date cancel), contract_end when action is "cancel".
      */
     public static Long subscriptionEndDate(Map<String, Object> sub) {
         Object cancelledAt = sub.get("cancelled_at");
         if (cancelledAt != null) {
             return ((Number) cancelledAt).longValue();
+        }
+        Object cancelAt = sub.get("cancel_at");
+        if (cancelAt != null) {
+            return ((Number) cancelAt).longValue();
         }
         if (sub.get("contract_term") instanceof Map<?, ?> ct) {
             Map<String, Object> ctMap = (Map<String, Object>) ct;
@@ -494,6 +499,11 @@ public class Simulator {
         if (rampsApplied != null && !rampsApplied.isEmpty()) {
             if (stateBeforeRamps != null) {
                 SimulatedSubscription.SubscriptionItem prevPlan = getPlanItem(stateBeforeRamps);
+                int prevPeriod = stateBeforeRamps.billingPeriod();
+                String prevUnit = stateBeforeRamps.billingPeriodUnit();
+                int currPeriod = state.billingPeriod();
+                String currUnit = state.billingPeriodUnit();
+                boolean billingPeriodChanged = prevPeriod != currPeriod || !java.util.Objects.equals(prevUnit, currUnit);
                 if (prevPlan != null && plan != null) {
                     if (prevPlan.unitPrice() != plan.unitPrice()) {
                         changes.add(String.format("Price changed from %s → %s",
@@ -503,6 +513,11 @@ public class Simulator {
                     if (prevPlan.quantity() != plan.quantity()) {
                         changes.add(String.format("Quantity changed from %d → %d", prevPlan.quantity(), plan.quantity()));
                     }
+                }
+                if (billingPeriodChanged) {
+                    changes.add(String.format("Plan frequency changed from %s to %s",
+                            formatBillingPeriod(prevPeriod, prevUnit),
+                            formatBillingPeriod(currPeriod, currUnit)));
                 }
             }
             boolean hasDiscount = rampsApplied.stream().anyMatch(r -> r.discountsToAdd() != null && !r.discountsToAdd().isEmpty());
@@ -545,6 +560,16 @@ public class Simulator {
         boolean zeroDec = List.of("JPY", "KRW", "VND", "CLP", "XOF", "XAF").contains(cur);
         double val = zeroDec ? cents : cents / 100.0;
         return String.format("$%,.0f", val);
+    }
+
+    private static String formatBillingPeriod(int period, String unit) {
+        if (unit == null) unit = "month";
+        String u = unit.toLowerCase();
+        if ("year".equals(u) || "years".equals(u)) return period == 1 ? "yearly" : period + "-year";
+        if ("month".equals(u) || "months".equals(u)) return period == 1 ? "monthly" : period == 3 ? "quarterly" : period == 6 ? "semi-annually" : period + "-month";
+        if ("week".equals(u) || "weeks".equals(u)) return period == 1 ? "weekly" : period + "-week";
+        if ("day".equals(u) || "days".equals(u)) return period == 1 ? "daily" : period + "-day";
+        return period + " " + unit;
     }
 
     private static SimulatedSubscription applyRamp(SimulatedSubscription sub, Ramp ramp) {

@@ -3,17 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HiveSight - Billing Validation Engine</title>
+    <title>HiveSight - Temporal Billing Validation Engine</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="/css/hivesight.css?v=6" rel="stylesheet">
 </head>
 <body>
     <nav class="navbar navbar-dark bg-dark navbar-expand-lg">
-        <div class="container">
+        <div class="container d-flex align-items-center">
             <a class="navbar-brand fw-bold" href="/">
                 <span class="text-warning">Hive</span>Sight
             </a>
             <span class="navbar-text text-muted small">Because Hindsight is too expensive for Enterprise Data</span>
+            <a class="btn btn-outline-warning btn-sm ms-auto" href="http://localhost:8767" target="_blank" rel="noopener">AI Agent</a>
         </div>
     </nav>
 
@@ -41,6 +42,7 @@
                             </div>
                             <div id="subscriptionList" class="mt-2"></div>
                             <div id="importedList" class="mt-2 d-none">
+                                <div id="importedMessage" class="alert alert-info py-2 small mb-2 d-none"></div>
                                 <small class="text-muted mb-1 d-block">Imported (click to select):</small>
                                 <div id="importedListItems"></div>
                             </div>
@@ -95,7 +97,8 @@
                 <div class="card shadow-sm">
                     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h5 class="mb-0">3. Timeline & Results</h5>
-                        <div class="d-flex align-items-center gap-2">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <span id="exportReadyMessage" class="small text-success d-none">Exports are ready to download.</span>
                             <div class="dropdown">
                                 <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" id="btnExport" data-bs-toggle="dropdown" disabled title="Run a simulation first to export" aria-expanded="false">Export CSV</button>
                                 <ul class="dropdown-menu dropdown-menu-end" id="exportDropdownMenu" aria-labelledby="btnExport">
@@ -175,23 +178,23 @@
                                 <h6 class="text-uppercase text-muted mb-3">Monthly Breakdown (Core Section)</h6>
                                 <div id="monthlyBreakdownList"></div>
                             </div>
-                        </div>
-                        <div id="batchChartsSection" class="mb-4 d-none">
-                            <h6 class="text-uppercase text-muted mb-3">Batch summary</h6>
-                            <div class="row g-3">
-                                <div class="col-lg-8">
-                                    <div class="card h-100">
-                                        <div class="card-body">
-                                            <p class="small text-muted mb-2">Total projected revenue by subscription</p>
-                                            <canvas id="batchRevenueChart" height="160"></canvas>
+                            <div id="batchChartsSection" class="mb-4 d-none">
+                                <h6 class="text-uppercase text-muted mb-3">Batch summary</h6>
+                                <div class="row g-3">
+                                    <div class="col-lg-8">
+                                        <div class="card h-100">
+                                            <div class="card-body">
+                                                <p class="small text-muted mb-2">Total projected revenue by subscription</p>
+                                                <canvas id="batchRevenueChart" height="160"></canvas>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                                <div class="col-lg-4">
-                                    <div class="card h-100">
-                                        <div class="card-body">
-                                            <p class="small text-muted mb-2">Outcome in simulation window</p>
-                                            <canvas id="batchOutcomeChart" height="160"></canvas>
+                                    <div class="col-lg-4">
+                                        <div class="card h-100">
+                                            <div class="card-body">
+                                                <p class="small text-muted mb-2">Outcome in simulation window</p>
+                                                <canvas id="batchOutcomeChart" height="160"></canvas>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -200,6 +203,65 @@
                         <h6 class="text-uppercase text-muted mb-2 mt-4">Event Timeline</h6>
                         <div id="timeline" class="timeline"></div>
                         <div id="error" class="alert alert-danger d-none"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card shadow-sm border-info">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">AI Insights</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-secondary small mb-3" id="aiConfigAlert">
+                            <span id="aiStatusText">Checking AI status...</span> <a href="#" id="aiConfigLink" class="d-none">Configure</a>
+                        </div>
+                        <div id="aiInsightsSingle">
+                            <p class="small text-muted mb-3">Run a single simulation above, then use these AI features for your subscription.</p>
+                            <div class="d-flex flex-wrap gap-2 mb-3">
+                                <button class="btn btn-sm btn-outline-primary" id="btnAiSummary">Generate AI Summary</button>
+                                <button class="btn btn-sm btn-outline-warning" id="btnAiAlerts">Smart Alerts</button>
+                            </div>
+                            <div id="aiSummary" class="card mb-3 d-none"><div class="card-body"></div></div>
+                            <div id="aiAlerts" class="mb-3 d-none"></div>
+                            <div class="card">
+                                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                                    <span>AI Chat Assistant</span>
+                                    <button class="btn btn-sm btn-outline-secondary" type="button" id="btnChatToggle">Expand</button>
+                                </div>
+                                <div class="card-body collapse" id="chatPanel">
+                                    <div id="chatMessages" class="mb-2" style="max-height: 200px; overflow-y: auto;"></div>
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" id="chatInput" class="form-control" placeholder="Ask about your simulation...">
+                                        <button class="btn btn-primary" type="button" id="btnChatSend">Send</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="aiInsightsBatch" class="d-none">
+                            <p class="small text-muted mb-3">Batch simulation complete. Get AI insights across all subscriptions.</p>
+                            <div class="d-flex flex-wrap gap-2 mb-3">
+                                <button class="btn btn-sm btn-outline-primary" id="btnAiBatchSummary">Generate Batch Summary</button>
+                                <button class="btn btn-sm btn-outline-warning" id="btnAiBatchAlerts">Batch Smart Alerts</button>
+                            </div>
+                            <div id="aiBatchSummary" class="card mb-3 d-none"><div class="card-body"></div></div>
+                            <div id="aiBatchAlerts" class="mb-3 d-none"></div>
+                            <div class="card">
+                                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                                    <span>Batch Chat Assistant</span>
+                                    <button class="btn btn-sm btn-outline-secondary" type="button" id="btnBatchChatToggle">Expand</button>
+                                </div>
+                                <div class="card-body collapse" id="batchChatPanel">
+                                    <div id="batchChatMessages" class="mb-2" style="max-height: 200px; overflow-y: auto;"></div>
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" id="batchChatInput" class="form-control" placeholder="Ask about the batch (e.g. Which subs have the most ramps?)...">
+                                        <button class="btn btn-primary" type="button" id="btnBatchChatSend">Send</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -214,6 +276,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="/js/app.js?v=10"></script>
+    <script src="/js/app.js?v=16"></script>
 </body>
 </html>
