@@ -765,6 +765,14 @@ function buildInvoiceTrendData(data) {
     const endTs = data.simulationEnd;
     if (!startTs || !endTs) return null;
 
+    const eventTypeLabels = { renewal: 'Renewal', ramp_applied: 'Ramp applied', credit_note: 'Credit note' };
+    const buildReason = (e) => {
+        const typeLabel = eventTypeLabels[e.type] || (e.type || '').replace(/_/g, ' ');
+        const desc = (e.description || '').trim();
+        const amt = formatAmount(e.amount, currencyCode);
+        return desc ? `${typeLabel}: ${desc} (${amt})` : `${typeLabel} (${amt})`;
+    };
+
     // Build month buckets from simulation window (in timezone tz)
     const monthMap = new Map();
     const startKey = getMonthKeyInTz(startTs, tz);
@@ -774,28 +782,32 @@ function buildInvoiceTrendData(data) {
     let y = sy, m = sm;
     while (y < ey || (y === ey && m <= em)) {
         const key = `${y}-${String(m).padStart(2, '0')}`;
-        monthMap.set(key, { label: getMonthLabel(y, m), amountCents: 0 });
+        monthMap.set(key, { label: getMonthLabel(y, m), amountCents: 0, reasons: [] });
         m++;
         if (m > 12) { m = 1; y++; }
     }
 
-    // Sum amounts by month (event date in site timezone)
+    // Sum amounts by month and collect reasons (event date in site timezone)
     eventsWithAmount.forEach(e => {
         const monthKey = getMonthKeyInTz(e.date, tz);
         if (monthMap.has(monthKey)) {
-            monthMap.get(monthKey).amountCents += e.amount;
+            const b = monthMap.get(monthKey);
+            b.amountCents += e.amount;
+            b.reasons.push(buildReason(e));
         }
     });
 
     const labels = [];
     const values = [];
+    const reasons = [];
     const sortedKeys = [...monthMap.keys()].sort();
     sortedKeys.forEach(k => {
         const b = monthMap.get(k);
         labels.push(b.label);
         values.push(b.amountCents);
+        reasons.push(b.reasons);
     });
-    return { labels, values, currencyCode };
+    return { labels, values, reasons, currencyCode };
 }
 
 function renderInvoiceTrendChart(data) {
@@ -841,7 +853,18 @@ function renderInvoiceTrendChart(data) {
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
-                        label: (ctx) => formatAmount(ctx.raw, chartData.currencyCode)
+                        title: (items) => items[0]?.label || '',
+                        label: (ctx) => {
+                            const lines = [formatAmount(ctx.raw, chartData.currencyCode)];
+                            const idx = ctx.dataIndex;
+                            const reasons = chartData.reasons?.[idx];
+                            if (reasons && reasons.length > 0) {
+                                lines.push('');
+                                lines.push('Reasons:');
+                                reasons.forEach(r => lines.push(`• ${r}`));
+                            }
+                            return lines;
+                        }
                     }
                 }
             },
