@@ -7,6 +7,42 @@ from config import AI_PROVIDER, GROQ_API_KEY, OPENAI_API_KEY, GROQ_MODEL, OPENAI
 from tools import TOOL_DEFINITIONS, TOOL_MAP
 
 
+def _parse_failed_generation(text: str) -> Optional[Tuple[str, dict]]:
+    """Parse Groq's failed_generation when model outputs malformed tool call (e.g. <function=name={...})."""
+    if not text or not isinstance(text, str):
+        return None
+    text = text.strip()
+    # Format: <function=name={...} or <function/name>{...} (JSON may be truncated)
+    for pattern in [
+        r"<function=(\w+)=\s*(\{.*)",  # <function=list_subscriptions={"has_scheduled_changes": true}
+        r"<function/(\w+)>\s*(\{.*)",
+    ]:
+        m = re.search(pattern, text, re.DOTALL)
+        if m:
+            name, args_str = m.group(1), m.group(2)
+            # Fix truncated JSON - ensure balanced braces
+            depth, end = 0, 0
+            for i, c in enumerate(args_str):
+                if c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            if end:
+                args_str = args_str[:end]
+            else:
+                args_str = args_str.rstrip() + "}"  # append closing brace if truncated
+            try:
+                args = json.loads(args_str)
+            except json.JSONDecodeError:
+                continue
+            if name in TOOL_MAP:
+                return (name, args)
+    return None
+
+
 SYSTEM_PROMPT = """You are a helpful billing assistant for HiveSight, a Chargebee subscription simulation tool.
 You have access to tools that call the HiveSight API. Use them to answer user questions about subscriptions.
 
@@ -80,12 +116,49 @@ def run_agent(user_message: str, conversation_history: list = None) -> str:
 
     max_iterations = 10
     for _ in range(max_iterations):
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=TOOL_DEFINITIONS,
-            tool_choice="auto",
-        )
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=TOOL_DEFINITIONS,
+                tool_choice="auto",
+            )
+        except Exception as e:
+            # Groq sometimes returns 400 tool_use_failed when model outputs malformed tool call
+            err_body = getattr(e, "body", None) or getattr(e, "response", None)
+            if err_body is None:
+                # Some clients put error dict in str(e) or message
+                err_str = str(e)
+                if "'error':" in err_str or '"error":' in err_str:
+                    try:
+                        # Extract dict from "400 - {...}" style message
+                        idx = err_str.find("{")
+                        if idx >= 0:
+                            err_body = json.loads(err_str[idx:])
+                    except json.JSONDecodeError:
+                        pass
+            if err_body is None:
+                err_body = {}
+            if isinstance(err_body, str):
+                try:
+                    err_body = json.loads(err_body)
+                except json.JSONDecodeError:
+                    err_body = {}
+            err = err_body.get("error", {}) if isinstance(err_body, dict) else {}
+            code = err.get("code") if isinstance(err, dict) else None
+            if code == "tool_use_failed":
+                failed = err.get("failed_generation", "")
+                parsed = _parse_failed_generation(failed)
+                if parsed:
+                    name, args = parsed
+                    result = execute_tool(name, args)
+                    messages.append({
+                        "role": "user",
+                        "content": f"[Recovered tool call: {name}]\n\nTool returned:\n{result[:6000]}\n\nSummarize this cleanly for the user in Markdown. Use a table for lists. Convert cents to dollars."
+                    })
+                    resp2 = client.chat.completions.create(model=model, messages=messages)
+                    return (resp2.choices[0].message.content or "").strip() or result[:2000]
+            raise
 
         choice = response.choices[0]
         if choice.finish_reason == "stop":

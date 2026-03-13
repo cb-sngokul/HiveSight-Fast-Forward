@@ -51,6 +51,9 @@ HTML = """
         .btn-agent { background: var(--cb-confident-orange) !important; border-color: var(--cb-confident-orange) !important; color: white !important; font-weight: 600; }
         .btn-agent:hover { background: #e62e00 !important; border-color: #e62e00 !important; color: white !important; }
         .welcome-msg { background: rgba(162,193,196,0.15); border: 1px solid var(--cb-clarity-blue); border-radius: 0.5rem; color: var(--cb-mature-blue); }
+        body.embed-mode .agent-nav, body.embed-mode .agent-hero, body.embed-mode footer { display: none !important; }
+        body.embed-mode main { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
+        body.embed-mode .agent-card { margin: 0 !important; }
     </style>
 </head>
 <body>
@@ -87,6 +90,10 @@ HTML = """
         </footer>
     </main>
     <script>
+        (function() {
+            const embed = new URLSearchParams(window.location.search).get('embed') === '1' || window.self !== window.top;
+            if (embed) document.body.classList.add('embed-mode');
+        })();
         const form = document.getElementById('chatForm');
         const input = document.getElementById('chatInput');
         const messages = document.getElementById('chatMessages');

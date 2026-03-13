@@ -1581,53 +1581,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // AI Chat
-    const chatToggle = document.getElementById('btnChatToggle');
-    const chatPanel = document.getElementById('chatPanel');
-    const chatMessages = document.getElementById('chatMessages');
-    const chatInput = document.getElementById('chatInput');
-    const btnChatSend = document.getElementById('btnChatSend');
-
-    if (chatToggle && chatPanel) {
-        chatToggle.addEventListener('click', () => {
-            const collapsed = chatPanel.classList.contains('collapse');
-            chatPanel.classList.toggle('collapse', !collapsed);
-            chatToggle.textContent = collapsed ? 'Collapse' : 'Expand';
-        });
-    }
-
-    if (btnChatSend && chatInput && chatMessages) {
-        const addChatMsg = (role, text) => {
-            const div = document.createElement('div');
-            div.className = `small mb-2 ${role === 'user' ? 'text-end' : ''}`;
-            div.innerHTML = `<span class="badge ${role === 'user' ? 'bg-primary' : 'bg-secondary'}">${role === 'user' ? 'You' : 'AI'}</span> ${escapeHtml(text)}`;
-            chatMessages.appendChild(div);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        };
-
-        btnChatSend.addEventListener('click', async () => {
-            const msg = chatInput.value.trim();
-            if (!msg) return;
-            if (!lastSimulationData) { showError('Run a simulation first'); return; }
-            hideError();
-            chatInput.value = '';
-            addChatMsg('user', msg);
-            chatMessages.insertAdjacentHTML('beforeend', '<div class="small mb-2 text-muted">AI is thinking...</div>');
-            const loadingEl = chatMessages.lastElementChild;
-            try {
-                const json = await callAi('chat', { message: msg });
-                loadingEl.remove();
-                const response = fixReportAmounts(json.response || 'No response.', lastSimulationData);
-                addChatMsg('assistant', response);
-            } catch (e) {
-                loadingEl.remove();
-                addChatMsg('assistant', 'Error: ' + e.message);
-            }
-        });
-
-        chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnChatSend.click(); });
-    }
-
     // Batch AI Summary
     const btnBatchSummary = document.getElementById('btnAiBatchSummary');
     if (btnBatchSummary) {
@@ -1678,51 +1631,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Batch AI Chat
-    const batchChatToggle = document.getElementById('btnBatchChatToggle');
-    const batchChatPanel = document.getElementById('batchChatPanel');
-    const batchChatMessages = document.getElementById('batchChatMessages');
-    const batchChatInput = document.getElementById('batchChatInput');
-    const btnBatchChatSend = document.getElementById('btnBatchChatSend');
-
-    if (batchChatToggle && batchChatPanel) {
-        batchChatToggle.addEventListener('click', () => {
-            const collapsed = batchChatPanel.classList.contains('collapse');
-            batchChatPanel.classList.toggle('collapse', !collapsed);
-            batchChatToggle.textContent = collapsed ? 'Collapse' : 'Expand';
-        });
-    }
-
-    if (btnBatchChatSend && batchChatInput && batchChatMessages) {
-        const addBatchChatMsg = (role, text) => {
-            const div = document.createElement('div');
-            div.className = `small mb-2 ${role === 'user' ? 'text-end' : ''}`;
-            div.innerHTML = `<span class="badge ${role === 'user' ? 'bg-primary' : 'bg-secondary'}">${role === 'user' ? 'You' : 'AI'}</span> ${escapeHtml(text)}`;
-            batchChatMessages.appendChild(div);
-            batchChatMessages.scrollTop = batchChatMessages.scrollHeight;
-        };
-
-        btnBatchChatSend.addEventListener('click', async () => {
-            const msg = batchChatInput.value.trim();
-            if (!msg) return;
-            if (!lastBatchResults || lastBatchResults.length === 0) { showError('Run a batch simulation first'); return; }
-            hideError();
-            batchChatInput.value = '';
-            addBatchChatMsg('user', msg);
-            batchChatMessages.insertAdjacentHTML('beforeend', '<div class="small mb-2 text-muted">AI is thinking...</div>');
-            const loadingEl = batchChatMessages.lastElementChild;
-            try {
-                const json = await callAiBatch('chat-batch', { message: msg, results: lastBatchResults });
-                loadingEl.remove();
-                addBatchChatMsg('assistant', json.response || 'No response.');
-            } catch (e) {
-                loadingEl.remove();
-                addBatchChatMsg('assistant', 'Error: ' + e.message);
-            }
-        });
-
-        batchChatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnBatchChatSend.click(); });
-    }
 });
 
 function escapeHtml(s) {

@@ -48,6 +48,6 @@ def _get_groq_key():
 
 GROQ_API_KEY = _get_groq_key()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-# llama-3.1-70b-versatile was decommissioned Jan 2025; use llama-3.3-70b-versatile or llama-3.1-8b-instant
+# Use 70B for reliable tool calling; 8b-instant often triggers tool_use_failed (we recover when possible)
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
