@@ -60,6 +60,21 @@
         </div>
     </div>
 
+    <!-- AI Agent Expand Modal -->
+    <div class="modal fade" id="aiAgentExpandModal" tabindex="-1" aria-labelledby="aiAgentExpandModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" style="max-width: 700px;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="aiAgentExpandModalLabel">AI Agent Chat</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <iframe id="aiAgentFrameExpanded" src="http://localhost:8767?embed=1" title="HiveSight AI Agent (Expanded)" class="ai-agent-iframe-expanded"></iframe>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <main class="sim-main">
         <div class="sim-card">
             <div class="sim-card-header">
@@ -253,7 +268,13 @@
                             <div id="aiBatchAlerts" class="mb-3 d-none"></div>
                         </div>
                         <div class="mt-4">
-                            <h6 class="text-uppercase text-muted mb-2">AI Agent Chat</h6>
+                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                <h6 class="text-uppercase text-muted mb-0">AI Agent Chat</h6>
+                                <button type="button" class="sim-btn sim-btn-secondary sim-btn-sm" id="btnExpandAiAgent" title="Expand to view in larger window">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+                                    Expand
+                                </button>
+                            </div>
                             <p class="small text-muted mb-2">Simulate subscriptions, validate cancellations, and answer billing questions. Ensure the AI Agent is running on port 8767.</p>
                             <iframe id="aiAgentFrame" src="http://localhost:8767?embed=1" title="HiveSight AI Agent" class="ai-agent-iframe"></iframe>
                         </div>

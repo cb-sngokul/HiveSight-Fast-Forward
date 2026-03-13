@@ -1074,11 +1074,22 @@ function setupChargebeeConfigModal() {
 }
 
 // Set default start/end months: current month to 18 months from now
+function setupAiAgentExpandModal() {
+    const btn = document.getElementById('btnExpandAiAgent');
+    const modal = document.getElementById('aiAgentExpandModal');
+    if (!btn || !modal) return;
+    btn.addEventListener('click', () => {
+        const modalInstance = new bootstrap.Modal(modal);
+        modalInstance.show();
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     checkAiStatus();
     switchAiInsightsMode();
     loadChargebeeConfig();
     setupChargebeeConfigModal();
+    setupAiAgentExpandModal();
     const now = new Date();
     const startEl = document.getElementById('startMonth');
     const endEl = document.getElementById('endMonth');

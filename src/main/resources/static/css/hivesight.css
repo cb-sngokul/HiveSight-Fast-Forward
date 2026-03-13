@@ -865,6 +865,15 @@ body.simulator-layout {
   display: block;
 }
 
+.ai-agent-iframe-expanded {
+  width: 100%;
+  height: 480px;
+  border: none;
+  border-radius: 0;
+  background: var(--sim-card);
+  display: block;
+}
+
 .sim-form-group {
   display: flex;
   flex-direction: column;
