@@ -211,7 +211,7 @@ function renderBatchCharts(results) {
                 labels: ['Active through window', 'End in cancellation'],
                 datasets: [{
                     data: [activeCount, cancelledCount],
-                    backgroundColor: ['rgba(40, 167, 69, 0.8)', 'rgba(220, 53, 69, 0.8)'],
+                    backgroundColor: ['rgba(13, 148, 136, 0.8)', 'rgba(220, 38, 38, 0.8)'],
                     borderWidth: 1
                 }]
             },
@@ -223,12 +223,6 @@ function renderBatchCharts(results) {
         });
     }
 }
-
-/** Last simulation/validation result, used for Export CSV (single subscription). */
-let lastSimulationResult = null;
-
-/** Results from Simulate Batch: array of simulation result objects. When set, Export uses this for all handles. */
-let lastBatchResults = null;
 
 /** Escape a value for CSV (wrap in quotes if contains comma, quote, or newline). */
 function csvEscape(val) {
@@ -486,10 +480,6 @@ function downloadBlob(blob, filename) {
     URL.revokeObjectURL(a.href);
 }
 
-/** Chart.js instances for batch charts; destroyed when switching to single or re-running batch. */
-let batchRevenueChartInstance = null;
-let batchOutcomeChartInstance = null;
-
 function hideBatchCharts() {
     if (batchRevenueChartInstance) {
         batchRevenueChartInstance.destroy();
@@ -499,7 +489,8 @@ function hideBatchCharts() {
         batchOutcomeChartInstance.destroy();
         batchOutcomeChartInstance = null;
     }
-    document.getElementById('batchChartsSection').classList.add('d-none');
+    const el = document.getElementById('batchChartsSection');
+    if (el) el.classList.add('d-none');
 }
 
 /** Render bar chart (revenue by subscription) and pie chart (cancelled vs active) for batch results. */
@@ -526,8 +517,8 @@ function renderBatchCharts(results) {
             datasets: [{
                 label: 'Projected revenue',
                 data: revenueData.map(d => d.revenue),
-                backgroundColor: 'rgba(40, 167, 69, 0.7)',
-                borderColor: 'rgba(40, 167, 69, 1)',
+                backgroundColor: 'rgba(13, 148, 136, 0.7)',
+                borderColor: 'rgba(13, 148, 136, 1)',
                 borderWidth: 1
             }]
         },
@@ -559,7 +550,7 @@ function renderBatchCharts(results) {
             labels: ['Active through window', 'End in cancellation'],
             datasets: [{
                 data: [activeCount, cancelledCount],
-                backgroundColor: ['rgba(40, 167, 69, 0.8)', 'rgba(220, 53, 69, 0.8)'],
+                backgroundColor: ['rgba(13, 148, 136, 0.8)', 'rgba(220, 38, 38, 0.8)'],
                 borderWidth: 1
             }]
         },
@@ -599,15 +590,21 @@ function renderTimeline(events, timezone) {
         paused: '⏸️',
         resumed: '▶️',
         non_renewing: '🔚',
-        contract_end: '📋'
+        contract_end: '📋',
+        credit_note: '📄'
     };
 
     events.forEach(e => {
         const div = document.createElement('div');
         div.className = 'timeline-item';
-        const amountHtml = (e.amount != null && e.amount !== undefined)
-            ? `<div class="timeline-amount text-success fw-semibold">${formatAmount(e.amount, e.currencyCode)}</div>`
-            : '';
+        let amountHtml = '';
+        if (e.amount != null && e.amount !== undefined) {
+            const isCredit = e.type === 'credit_note' || e.amount < 0;
+            const amt = isCredit ? Math.abs(e.amount) : e.amount;
+            const cls = isCredit ? 'text-danger' : 'text-success';
+            const label = isCredit ? 'Credit: ' : '';
+            amountHtml = `<div class="timeline-amount ${cls} fw-semibold">${label}${formatAmount(amt, e.currencyCode)}</div>`;
+        }
         const dateDisplay = e.date ? formatDateTime(e.date, timezone) : (e.dateFormatted || '—');
         div.innerHTML = `
             <div class="timeline-icon ${e.type}">${icons[e.type] || '•'}</div>
@@ -744,8 +741,8 @@ function renderInvoiceTrendChart(data) {
             datasets: [{
                 label: 'Invoice Amount',
                 data: chartData.values,
-                borderColor: 'rgb(13, 110, 253)',
-                backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                borderColor: 'rgb(1, 42, 56)',
+                backgroundColor: 'rgba(162, 193, 196, 0.2)',
                 fill: true,
                 tension: 0.2
             }]
@@ -799,30 +796,34 @@ function renderMonthlyBreakdown(data) {
     container.classList.remove('d-none');
 
     const breakdownCards = breakdowns.map(b => {
+        const isCreditNote = (b.changes || []).some(c => /credit note/i.test(String(c)));
+        const cardClass = isCreditNote ? 'monthly-breakdown-card border-danger' : 'monthly-breakdown-card';
+        const headerClass = isCreditNote ? 'py-2 bg-danger bg-opacity-10 text-danger' : 'py-2 bg-light';
         const discountLine = b.discountCents > 0
             ? `<div class="d-flex justify-content-between"><span>Manual Discount:</span><span class="text-danger">-${formatAmount(b.discountCents, currencyCode)}</span></div>`
             : '';
         const taxLabel = b.taxRatePercent != null ? `Tax (${b.taxRatePercent}%):` : 'Tax:';
-        const taxLine = (b.taxRatePercent != null || b.taxCents > 0)
+        const taxLine = (b.taxRatePercent != null || b.taxCents > 0) && !isCreditNote
             ? `<div class="d-flex justify-content-between"><span>${taxLabel}</span><span>${formatAmount(b.taxCents, currencyCode)}</span></div>`
             : '';
-        const impactLine = b.impactVsPreviousCents != null
+        const impactLine = b.impactVsPreviousCents != null && !isCreditNote
             ? `<div class="mt-2 small ${b.impactVsPreviousCents >= 0 ? 'text-success' : 'text-danger'}"><strong>Impact:</strong> ${formatAmount(Math.abs(b.impactVsPreviousCents), currencyCode)} ${b.impactVsPreviousCents >= 0 ? 'increase' : 'decrease'} vs previous month</div>`
             : '';
+        const totalClass = b.totalCents < 0 ? 'text-danger' : '';
 
         return `
-            <div class="card mb-3 monthly-breakdown-card">
-                <div class="card-header py-2 bg-light">
-                    <strong>${b.monthLabel}</strong>
+            <div class="card mb-3 ${cardClass}">
+                <div class="card-header py-2 ${headerClass}">
+                    <strong>${b.monthLabel}</strong>${isCreditNote ? ' <span class="badge bg-danger ms-1">Refundable Credit Note</span>' : ''}
                 </div>
                 <div class="card-body py-3 small">
                     <div class="mb-2">
-                        <div class="d-flex justify-content-between"><span>Unit Price:</span><span>${formatAmount(b.unitPrice, currencyCode)}</span></div>
+                        ${!isCreditNote ? `<div class="d-flex justify-content-between"><span>Unit Price:</span><span>${formatAmount(b.unitPrice, currencyCode)}</span></div>
                         <div class="d-flex justify-content-between"><span>Quantity:</span><span>${b.quantity}</span></div>
                         <div class="d-flex justify-content-between"><span>Subtotal:</span><span>${formatAmount(b.subtotalCents, currencyCode)}</span></div>
                         ${discountLine}
-                        ${taxLine}
-                        <div class="d-flex justify-content-between mt-2 pt-2 border-top"><span><strong>Total:</strong></span><span><strong>${formatAmount(b.totalCents, currencyCode)}</strong></span></div>
+                        ${taxLine}` : ''}
+                        <div class="d-flex justify-content-between mt-2 pt-2 border-top"><span><strong>Total:</strong></span><span class="${totalClass}"><strong>${formatAmount(b.totalCents, currencyCode)}</strong></span></div>
                     </div>
                     <div class="mt-2">
                         <strong>Change:</strong>
@@ -862,7 +863,7 @@ function renderDetailedReport(data) {
 
     document.getElementById('statRenewals').textContent = renewals;
     document.getElementById('statRamps').textContent = ramps;
-    document.getElementById('statTotalRevenue').textContent = totalRevenue > 0
+    document.getElementById('statTotalRevenue').textContent = totalRevenue !== 0
         ? formatAmount(totalRevenue, data.currencyCode)
         : '—';
     document.getElementById('statWindow').textContent = data.simulationStart && data.simulationEnd

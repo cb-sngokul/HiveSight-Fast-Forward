@@ -249,6 +249,38 @@ public class Simulator {
                             rampAmount,
                             state.currencyCode()
                     ));
+                    // Credit note: when ramp changes billing period mid-term, prorated credit for unused portion
+                    if (stateBeforeRamps != null) {
+                        boolean billingPeriodChanged = stateBeforeRamps.billingPeriod() != state.billingPeriod()
+                                || !java.util.Objects.equals(stateBeforeRamps.billingPeriodUnit(), state.billingPeriodUnit());
+                        long termStart = stateBeforeRamps.currentTermStart();
+                        long termEnd = stateBeforeRamps.currentTermEnd();
+                        long rampDate = ramp.effectiveFrom();
+                        if (billingPeriodChanged && termStart < rampDate && rampDate < termEnd) {
+                            long oldTermAmount = computeRecurringAmount(stateBeforeRamps);
+                            long totalSeconds = Math.max(1, termEnd - termStart);
+                            long unusedSeconds = Math.max(0, termEnd - rampDate);
+                            long creditCents = (unusedSeconds * oldTermAmount) / totalSeconds;
+                            if (creditCents > 0) {
+                                events.add(new TimelineEvent(
+                                        TimelineEvent.TYPE_CREDIT_NOTE,
+                                        rampDate,
+                                        formatDate(rampDate, zone),
+                                        "Refundable credit note (proration): unused portion of previous term",
+                                        ramp,
+                                        -creditCents,
+                                        state.currencyCode()
+                                ));
+                                String cnMonthKey = formatDate(rampDate, zone).substring(0, 7);
+                                String cnMonthLabel = Instant.ofEpochSecond(rampDate).atZone(zone)
+                                        .format(DateTimeFormatter.ofPattern("MMMM yyyy"));
+                                monthlyBreakdowns.add(new MonthlyBreakdown(
+                                        cnMonthKey, cnMonthLabel, 0, 0, -creditCents, 0, null, 0, -creditCents,
+                                        state.currencyCode(), List.of("Refundable credit note (proration)"), null
+                                ));
+                            }
+                        }
+                    }
                 }
             }
 
@@ -431,6 +463,7 @@ public class Simulator {
             }
         }
 
+        monthlyBreakdowns.sort(Comparator.comparing(MonthlyBreakdown::monthKey));
         return new SimulationResult(
                 subscription.id(),
                 subscription.customerId(),

@@ -211,7 +211,7 @@ function renderBatchCharts(results) {
                 labels: ['Active through window', 'End in cancellation'],
                 datasets: [{
                     data: [activeCount, cancelledCount],
-                    backgroundColor: ['rgba(40, 167, 69, 0.8)', 'rgba(220, 53, 69, 0.8)'],
+                    backgroundColor: ['rgba(13, 148, 136, 0.8)', 'rgba(220, 38, 38, 0.8)'],
                     borderWidth: 1
                 }]
             },
@@ -222,6 +222,346 @@ function renderBatchCharts(results) {
             }
         });
     }
+}
+
+/** Escape a value for CSV (wrap in quotes if contains comma, quote, or newline). */
+function csvEscape(val) {
+    if (val == null || val === undefined) return '';
+    const s = String(val);
+    if (/[,"\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+}
+
+/** Build CSV string from current simulation result (what's shown in the UI). */
+function buildExportCsv(data) {
+    const events = data.events || [];
+    const renewals = events.filter(e => e.type === 'renewal').length;
+    const ramps = events.filter(e => e.type === 'ramp_applied').length;
+    const totalRevenue = events
+        .filter(e => e.amount != null && e.amount !== undefined)
+        .reduce((sum, e) => sum + e.amount, 0);
+    const revDisplay = totalRevenue > 0 ? formatAmount(totalRevenue, data.currencyCode) : '—';
+    const windowStr = data.simulationStart && data.simulationEnd
+        ? `${formatDate(data.simulationStart)} → ${formatDate(data.simulationEnd)}`
+        : '18 months';
+
+    const rows = [];
+    // Summary header + row
+    rows.push(['subscription_id', 'customer_id', 'simulation_start', 'simulation_end', 'renewals_count', 'ramps_applied', 'simulation_window', 'total_revenue', 'currency_code', 'chargebee_next_billing', 'hivesight_next_billing', 'validation_passed', 'validation_message', 'timezone'].join(','));
+    rows.push([
+        data.subscriptionId ?? '',
+        data.customerId ?? '',
+        formatDate(data.simulationStart) ?? '',
+        formatDate(data.simulationEnd) ?? '',
+        renewals,
+        ramps,
+        windowStr,
+        revDisplay,
+        data.currencyCode ?? '',
+        formatDate(data.chargebeeUiNextBilling) ?? '',
+        formatDate(data.hivesightNextBilling) ?? '',
+        data.validationPassed != null ? data.validationPassed : '',
+        data.validationMessage ?? '',
+        data.timezone ?? ''
+    ].map(csvEscape).join(','));
+
+    rows.push('');
+    rows.push(['event_date', 'event_type', 'description', 'amount_display', 'amount_minor', 'currency_code'].join(','));
+    events.forEach(e => {
+        const amountDisplay = (e.amount != null && e.amount !== undefined) ? formatAmount(e.amount, e.currencyCode) : '';
+        rows.push([
+            e.dateFormatted ?? formatDate(e.date) ?? '',
+            e.type ?? '',
+            e.description ?? '',
+            amountDisplay,
+            e.amount != null && e.amount !== undefined ? e.amount : '',
+            e.currencyCode ?? ''
+        ].map(csvEscape).join(','));
+    });
+    return rows.join('\r\n');
+}
+
+/** Build CSV string from multiple simulation results (batch export). */
+function buildBatchExportCsv(results) {
+    const summaryHeader = ['subscription_id', 'customer_id', 'simulation_start', 'simulation_end', 'renewals_count', 'ramps_applied', 'simulation_window', 'total_revenue', 'currency_code', 'chargebee_next_billing', 'hivesight_next_billing', 'validation_passed', 'validation_message', 'timezone'];
+    const rows = [summaryHeader.join(',')];
+
+    results.forEach(data => {
+        const events = data.events || [];
+        const renewals = events.filter(e => e.type === 'renewal').length;
+        const ramps = events.filter(e => e.type === 'ramp_applied').length;
+        const totalRevenue = events
+            .filter(e => e.amount != null && e.amount !== undefined)
+            .reduce((sum, e) => sum + e.amount, 0);
+        const revDisplay = totalRevenue > 0 ? formatAmount(totalRevenue, data.currencyCode) : '—';
+        const windowStr = data.simulationStart && data.simulationEnd
+            ? `${formatDate(data.simulationStart)} → ${formatDate(data.simulationEnd)}`
+            : '18 months';
+        rows.push([
+            data.subscriptionId ?? '',
+            data.customerId ?? '',
+            formatDate(data.simulationStart) ?? '',
+            formatDate(data.simulationEnd) ?? '',
+            renewals,
+            ramps,
+            windowStr,
+            revDisplay,
+            data.currencyCode ?? '',
+            formatDate(data.chargebeeUiNextBilling) ?? '',
+            formatDate(data.hivesightNextBilling) ?? '',
+            data.validationPassed != null ? data.validationPassed : '',
+            data.validationMessage ?? '',
+            data.timezone ?? ''
+        ].map(csvEscape).join(','));
+    });
+
+    rows.push('');
+    rows.push(['subscription_id', 'event_date', 'event_type', 'description', 'amount_display', 'amount_minor', 'currency_code'].join(','));
+    results.forEach(data => {
+        const events = data.events || [];
+        const subId = data.subscriptionId ?? '';
+        events.forEach(e => {
+            const amountDisplay = (e.amount != null && e.amount !== undefined) ? formatAmount(e.amount, e.currencyCode) : '';
+            rows.push([
+                subId,
+                e.dateFormatted ?? formatDate(e.date) ?? '',
+                e.type ?? '',
+                e.description ?? '',
+                amountDisplay,
+                e.amount != null && e.amount !== undefined ? e.amount : '',
+                e.currencyCode ?? ''
+            ].map(csvEscape).join(','));
+        });
+    });
+    return rows.join('\r\n');
+}
+
+/** Parse month label (e.g. "Feb 2026") to sortable key (YYYY-MM). */
+function monthLabelToKey(label) {
+    if (!label || typeof label !== 'string') return '';
+    const parts = label.trim().split(/\s+/);
+    if (parts.length < 2) return label;
+    const months = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
+    const m = months[parts[0]];
+    const y = parseInt(parts[1], 10);
+    if (!m || !y) return label;
+    return `${y}-${String(m).padStart(2, '0')}`;
+}
+
+/** Build CSV for SHEET 1 - Executive Summary: one row per subscription, month columns, Total (Range), Transitions, Risk Level. */
+function buildBatchExecutiveSummaryCsv(results) {
+    if (!results || results.length === 0) return '';
+
+    const breakdownsBySub = new Map();
+    const allMonthLabels = new Set();
+    results.forEach(data => {
+        const list = data.monthlyBreakdowns || [];
+        breakdownsBySub.set(data.subscriptionId ?? '', list);
+        list.forEach(b => { if (b.monthLabel) allMonthLabels.add(b.monthLabel); });
+    });
+    const sortedMonths = [...allMonthLabels].sort((a, b) => monthLabelToKey(a).localeCompare(monthLabelToKey(b)));
+
+    const simulationStart = results[0]?.simulationStart;
+    const simulationEnd = results[0]?.simulationEnd;
+    const rangeStr = simulationStart && simulationEnd
+        ? `${formatDate(simulationStart)} → ${formatDate(simulationEnd)}`
+        : '—';
+    const generatedOn = new Date().toISOString().slice(0, 10);
+
+    const rows = [];
+    rows.push('SHEET 1 - Summary (Executive View)');
+    rows.push(`Simulation Range: ${rangeStr}`);
+    rows.push(`Generated On: ${generatedOn}`);
+    rows.push('');
+
+    const header = ['Subscription', 'Contract End', ...sortedMonths, 'Total (Range)', 'Transitions', 'Risk Level'];
+    rows.push(header.map(csvEscape).join(','));
+
+    results.forEach(data => {
+        const breakdowns = breakdownsBySub.get(data.subscriptionId ?? '') || [];
+        const monthToTotal = new Map();
+        let totalRange = 0;
+        const allChanges = new Set();
+        breakdowns.forEach(b => {
+            if (b.monthLabel) {
+                const totalCents = b.totalCents != null ? b.totalCents : 0;
+                monthToTotal.set(b.monthLabel, totalCents);
+                totalRange += totalCents;
+                (b.changes || []).forEach(c => { if (c) allChanges.add(c); });
+            }
+        });
+
+        const contractEnd = data.subscriptionEndDate
+            ? formatDateLong(data.subscriptionEndDate, data.timezone)
+            : '—';
+
+        const cancelled = (data.events || []).some(e => e.type === 'cancelled');
+        let riskLevel = 'Low';
+        if (cancelled || allChanges.size > 2) riskLevel = 'High';
+        else if (allChanges.size > 0) riskLevel = 'Medium';
+
+        const transitions = allChanges.size > 0 ? [...allChanges].join(', ') : 'None';
+
+        const currencyCode = data.currencyCode || 'USD';
+        const row = [
+            data.subscriptionId ?? '',
+            contractEnd,
+            ...sortedMonths.map(m => {
+                const cents = monthToTotal.get(m);
+                if (cents == null) return '';
+                const s = formatAmount(cents, currencyCode);
+                return s ? s.replace(/\$/g, '').trim() : cents;
+            }),
+            totalRange != null ? formatAmount(totalRange, currencyCode).replace(/\$/g, '').trim() : '',
+            transitions,
+            riskLevel
+        ];
+        rows.push(row.map(csvEscape).join(','));
+    });
+
+    return rows.join('\r\n');
+}
+
+/** Build CSV for SHEET 2 - Monthly Simulation (Detailed View): one row per subscription per month. */
+function buildBatchMonthlyDetailedCsv(results) {
+    if (!results || results.length === 0) return '';
+
+    const generatedOn = new Date().toISOString().slice(0, 10);
+    const rows = [];
+    rows.push('SHEET 2 - Monthly Simulation (Detailed View)');
+    rows.push(`Generated On: ${generatedOn}`);
+    rows.push('');
+
+    const header = ['Subscription', 'Month', 'Unit Price', 'Qty', 'Subtotal', 'Discount', 'Tax', 'Total', 'Proration', 'Change'];
+    rows.push(header.map(csvEscape).join(','));
+
+    results.forEach(data => {
+        const breakdowns = data.monthlyBreakdowns || [];
+        const currencyCode = data.currencyCode || 'USD';
+        const subId = data.subscriptionId ?? '';
+
+        breakdowns.forEach(b => {
+            const hasProration = (b.changes || []).some(c => /proration|prorate/i.test(String(c)));
+            const changeStr = (b.changes && b.changes.length > 0) ? b.changes.join('; ') : 'None';
+
+            const stripCurrency = (s) => (s || '').replace(/\$/g, '').trim();
+            const unitPriceDisplay = b.unitPrice != null ? stripCurrency(formatAmount(b.unitPrice, currencyCode)) : '';
+            const subtotalDisplay = b.subtotalCents != null ? stripCurrency(formatAmount(b.subtotalCents, currencyCode)) : '';
+            const discountVal = b.discountCents != null ? b.discountCents : 0;
+            const discountDisplay = discountVal !== 0 ? (discountVal > 0 ? '-' : '') + stripCurrency(formatAmount(Math.abs(discountVal), currencyCode)) : '0';
+            const taxDisplay = b.taxCents != null ? stripCurrency(formatAmount(b.taxCents, currencyCode)) : '';
+            const totalDisplay = b.totalCents != null ? stripCurrency(formatAmount(b.totalCents, currencyCode)) : '';
+
+            const row = [
+                subId,
+                b.monthLabel ?? '',
+                unitPriceDisplay || (b.unitPrice != null ? b.unitPrice : ''),
+                b.quantity != null ? b.quantity : '',
+                subtotalDisplay || (b.subtotalCents != null ? b.subtotalCents : ''),
+                discountDisplay,
+                taxDisplay || (b.taxCents != null ? b.taxCents : ''),
+                totalDisplay || (b.totalCents != null ? b.totalCents : ''),
+                hasProration ? 'Yes' : 'No',
+                changeStr
+            ];
+            rows.push(row.map(csvEscape).join(','));
+        });
+    });
+
+    return rows.join('\r\n');
+}
+
+/** Trigger download of a blob as a file. */
+function downloadBlob(blob, filename) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+function hideBatchCharts() {
+    if (batchRevenueChartInstance) {
+        batchRevenueChartInstance.destroy();
+        batchRevenueChartInstance = null;
+    }
+    if (batchOutcomeChartInstance) {
+        batchOutcomeChartInstance.destroy();
+        batchOutcomeChartInstance = null;
+    }
+    const el = document.getElementById('batchChartsSection');
+    if (el) el.classList.add('d-none');
+}
+
+/** Render bar chart (revenue by subscription) and pie chart (cancelled vs active) for batch results. */
+function renderBatchCharts(results) {
+    if (!window.Chart || results.length === 0) return;
+    hideBatchCharts();
+
+    const revenueData = results.map(r => {
+        const total = (r.events || [])
+            .filter(e => e.amount != null && e.amount !== undefined)
+            .reduce((sum, e) => sum + e.amount, 0);
+        return { id: r.subscriptionId || '—', revenue: total, currencyCode: r.currencyCode || 'USD' };
+    });
+    const cancelledCount = results.filter(r => (r.events || []).some(e => e.type === 'cancelled')).length;
+    const activeCount = results.length - cancelledCount;
+
+    document.getElementById('batchChartsSection').classList.remove('d-none');
+
+    const barCtx = document.getElementById('batchRevenueChart').getContext('2d');
+    batchRevenueChartInstance = new Chart(barCtx, {
+        type: 'bar',
+        data: {
+            labels: revenueData.map(d => d.id.length > 12 ? d.id.slice(0, 10) + '…' : d.id),
+            datasets: [{
+                label: 'Projected revenue',
+                data: revenueData.map(d => d.revenue),
+                backgroundColor: 'rgba(13, 148, 136, 0.7)',
+                borderColor: 'rgba(13, 148, 136, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function (ctx) {
+                            const d = revenueData[ctx.dataIndex];
+                            return formatAmount(d.revenue, d.currencyCode);
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { ticks: { maxRotation: 45, minRotation: 45 } },
+                y: { beginAtZero: true }
+            }
+        }
+    });
+
+    const pieCtx = document.getElementById('batchOutcomeChart').getContext('2d');
+    batchOutcomeChartInstance = new Chart(pieCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Active through window', 'End in cancellation'],
+            datasets: [{
+                data: [activeCount, cancelledCount],
+                backgroundColor: ['rgba(13, 148, 136, 0.8)', 'rgba(220, 38, 38, 0.8)'],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { position: 'bottom' }
+            }
+        }
+    });
 }
 
 function showLoading(show) {
@@ -250,15 +590,21 @@ function renderTimeline(events, timezone) {
         paused: '⏸️',
         resumed: '▶️',
         non_renewing: '🔚',
-        contract_end: '📋'
+        contract_end: '📋',
+        credit_note: '📄'
     };
 
     events.forEach(e => {
         const div = document.createElement('div');
         div.className = 'timeline-item';
-        const amountHtml = (e.amount != null && e.amount !== undefined)
-            ? `<div class="timeline-amount text-success fw-semibold">${formatAmount(e.amount, e.currencyCode)}</div>`
-            : '';
+        let amountHtml = '';
+        if (e.amount != null && e.amount !== undefined) {
+            const isCredit = e.type === 'credit_note' || e.amount < 0;
+            const amt = isCredit ? Math.abs(e.amount) : e.amount;
+            const cls = isCredit ? 'text-danger' : 'text-success';
+            const label = isCredit ? 'Credit: ' : '';
+            amountHtml = `<div class="timeline-amount ${cls} fw-semibold">${label}${formatAmount(amt, e.currencyCode)}</div>`;
+        }
         const dateDisplay = e.date ? formatDateTime(e.date, timezone) : (e.dateFormatted || '—');
         div.innerHTML = `
             <div class="timeline-icon ${e.type}">${icons[e.type] || '•'}</div>
@@ -395,8 +741,8 @@ function renderInvoiceTrendChart(data) {
             datasets: [{
                 label: 'Invoice Amount',
                 data: chartData.values,
-                borderColor: 'rgb(13, 110, 253)',
-                backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                borderColor: 'rgb(1, 42, 56)',
+                backgroundColor: 'rgba(162, 193, 196, 0.2)',
                 fill: true,
                 tension: 0.2
             }]
@@ -450,30 +796,34 @@ function renderMonthlyBreakdown(data) {
     container.classList.remove('d-none');
 
     const breakdownCards = breakdowns.map(b => {
+        const isCreditNote = (b.changes || []).some(c => /credit note/i.test(String(c)));
+        const cardClass = isCreditNote ? 'monthly-breakdown-card border-danger' : 'monthly-breakdown-card';
+        const headerClass = isCreditNote ? 'py-2 bg-danger bg-opacity-10 text-danger' : 'py-2 bg-light';
         const discountLine = b.discountCents > 0
             ? `<div class="d-flex justify-content-between"><span>Manual Discount:</span><span class="text-danger">-${formatAmount(b.discountCents, currencyCode)}</span></div>`
             : '';
         const taxLabel = b.taxRatePercent != null ? `Tax (${b.taxRatePercent}%):` : 'Tax:';
-        const taxLine = (b.taxRatePercent != null || b.taxCents > 0)
+        const taxLine = (b.taxRatePercent != null || b.taxCents > 0) && !isCreditNote
             ? `<div class="d-flex justify-content-between"><span>${taxLabel}</span><span>${formatAmount(b.taxCents, currencyCode)}</span></div>`
             : '';
-        const impactLine = b.impactVsPreviousCents != null
+        const impactLine = b.impactVsPreviousCents != null && !isCreditNote
             ? `<div class="mt-2 small ${b.impactVsPreviousCents >= 0 ? 'text-success' : 'text-danger'}"><strong>Impact:</strong> ${formatAmount(Math.abs(b.impactVsPreviousCents), currencyCode)} ${b.impactVsPreviousCents >= 0 ? 'increase' : 'decrease'} vs previous month</div>`
             : '';
+        const totalClass = b.totalCents < 0 ? 'text-danger' : '';
 
         return `
-            <div class="card mb-3 monthly-breakdown-card">
-                <div class="card-header py-2 bg-light">
-                    <strong>${b.monthLabel}</strong>
+            <div class="card mb-3 ${cardClass}">
+                <div class="card-header py-2 ${headerClass}">
+                    <strong>${b.monthLabel}</strong>${isCreditNote ? ' <span class="badge bg-danger ms-1">Credit Note</span>' : ''}
                 </div>
                 <div class="card-body py-3 small">
                     <div class="mb-2">
-                        <div class="d-flex justify-content-between"><span>Unit Price:</span><span>${formatAmount(b.unitPrice, currencyCode)}</span></div>
+                        ${!isCreditNote ? `<div class="d-flex justify-content-between"><span>Unit Price:</span><span>${formatAmount(b.unitPrice, currencyCode)}</span></div>
                         <div class="d-flex justify-content-between"><span>Quantity:</span><span>${b.quantity}</span></div>
                         <div class="d-flex justify-content-between"><span>Subtotal:</span><span>${formatAmount(b.subtotalCents, currencyCode)}</span></div>
                         ${discountLine}
-                        ${taxLine}
-                        <div class="d-flex justify-content-between mt-2 pt-2 border-top"><span><strong>Total:</strong></span><span><strong>${formatAmount(b.totalCents, currencyCode)}</strong></span></div>
+                        ${taxLine}` : ''}
+                        <div class="d-flex justify-content-between mt-2 pt-2 border-top"><span><strong>Total:</strong></span><span class="${totalClass}"><strong>${formatAmount(b.totalCents, currencyCode)}</strong></span></div>
                     </div>
                     <div class="mt-2">
                         <strong>Change:</strong>
@@ -513,7 +863,7 @@ function renderDetailedReport(data) {
 
     document.getElementById('statRenewals').textContent = renewals;
     document.getElementById('statRamps').textContent = ramps;
-    document.getElementById('statTotalRevenue').textContent = totalRevenue > 0
+    document.getElementById('statTotalRevenue').textContent = totalRevenue !== 0
         ? formatAmount(totalRevenue, data.currencyCode)
         : '—';
     document.getElementById('statWindow').textContent = data.simulationStart && data.simulationEnd

@@ -17,4 +17,5 @@ public record TimelineEvent(
     public static final String TYPE_RESUMED = "resumed";
     public static final String TYPE_NON_RENEWING = "non_renewing";
     public static final String TYPE_CONTRACT_END = "contract_end";
+    public static final String TYPE_CREDIT_NOTE = "credit_note";
 }
