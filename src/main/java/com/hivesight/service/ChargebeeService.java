@@ -18,20 +18,15 @@ import java.util.*;
 public class ChargebeeService {
 
     private final RestTemplate restTemplate = new RestTemplate();
-    private final String baseUrl;
-
-    private final String apiKey;
-
+    private final ChargebeeConfigService configService;
     private final ZoneId siteTimezone;
     private final String defaultTaxRate;
 
     public ChargebeeService(
-            @Value("${chargebee.site:your-site-test}") String site,
-            @Value("${chargebee.api-key:test_xxxxxxxx}") String apiKey,
+            ChargebeeConfigService configService,
             @Value("${chargebee.timezone:Asia/Kolkata}") String timezone,
             @Value("${chargebee.default-tax-rate:}") String defaultTaxRate) {
-        this.baseUrl = "https://" + site + ".chargebee.com/api/v2";
-        this.apiKey = apiKey;
+        this.configService = configService;
         ZoneId zone;
         try {
             zone = ZoneId.of(timezone);
@@ -42,15 +37,19 @@ public class ChargebeeService {
         this.defaultTaxRate = defaultTaxRate != null && !defaultTaxRate.isBlank() ? defaultTaxRate : null;
     }
 
+    private String baseUrl() {
+        return "https://" + configService.getSite() + ".chargebee.com/api/v2";
+    }
+
     private HttpHeaders authHeaders() {
         HttpHeaders h = new HttpHeaders();
-        h.setBasicAuth(apiKey, "");
+        h.setBasicAuth(configService.getApiKey(), "");
         h.setContentType(MediaType.APPLICATION_JSON);
         return h;
     }
 
     public List<Map<String, Object>> listSubscriptions(boolean hasScheduledChangesOnly) {
-        String url = baseUrl + "/subscriptions?limit=50";
+        String url = baseUrl() + "/subscriptions?limit=50";
         if (hasScheduledChangesOnly) {
             url += "&subscription[has_scheduled_changes][is]=true";
         }
@@ -161,7 +160,7 @@ public class ChargebeeService {
     }
 
     public Map<String, Object> getSubscription(String subscriptionId) {
-        String url = baseUrl + "/subscriptions/" + subscriptionId;
+        String url = baseUrl() + "/subscriptions/" + subscriptionId;
         ResponseEntity<Map> resp = restTemplate.exchange(
                 url,
                 HttpMethod.GET,
@@ -174,7 +173,7 @@ public class ChargebeeService {
     @SuppressWarnings("unchecked")
     private Map<String, Object> getItemPrice(String itemPriceId) {
         try {
-            String url = baseUrl + "/item_prices/" + itemPriceId;
+            String url = baseUrl() + "/item_prices/" + itemPriceId;
             ResponseEntity<Map> resp = restTemplate.exchange(
                     url,
                     HttpMethod.GET,
@@ -189,7 +188,7 @@ public class ChargebeeService {
 
     @SuppressWarnings("unchecked")
     public List<Ramp> listRamps(String subscriptionId) {
-        String url = baseUrl + "/ramps?limit=100&subscription_id[in]=[\"" + subscriptionId + "\"]";
+        String url = baseUrl() + "/ramps?limit=100&subscription_id[in]=[\"" + subscriptionId + "\"]";
         try {
             ResponseEntity<Map> resp = restTemplate.exchange(
                     url,

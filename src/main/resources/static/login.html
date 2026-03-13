@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HiveSight — Sign In</title>
+  <meta name="description" content="Connect to Chargebee to simulate subscription lifecycles and catch billing errors.">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #ffffff;
+      --fg: #0a0a0a;
+      --card: hsl(0, 0%, 98%);
+      --primary: #0a0a0a;
+      --primary-fg: #ffffff;
+      --secondary: hsl(0, 0%, 96%);
+      --muted: hsl(0, 0%, 94%);
+      --muted-fg: hsl(0, 0%, 45%);
+      --accent: #ff4d00;
+      --accent-fg: #ffffff;
+      --border: hsl(0, 0%, 88%);
+      --input: hsl(0, 0%, 88%);
+      --ring: #0a0a0a;
+      --success: hsl(165, 60%, 42%);
+      --radius: 0.75rem;
+      --font-sans: 'Inter', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+    .config-topbar {
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .config-topbar .chargebee-logo { height: 1.25rem; width: auto; object-fit: contain; vertical-align: middle; }
+    .config-topbar .topbar-sep { color: var(--muted-fg); font-size: 0.875rem; align-self: center; }
+    .config-topbar .brand { font-size: 1.125rem; font-weight: 600; letter-spacing: -0.01em; color: #0a0a0a; }
+    .config-topbar .brand .hive { color: #ff4d00; }
+    .config-topbar .brand .sight { color: #0a0a0a; }
+    .config-center {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 1.5rem 3rem;
+    }
+    .config-card {
+      width: 100%;
+      max-width: 51.25rem;
+      border-radius: 1rem;
+      border: 1px solid var(--border);
+      background: var(--card);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+    @media (max-width: 768px) { .config-card { grid-template-columns: 1fr; } }
+    .config-left {
+      padding: 2.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      background: var(--secondary);
+      gap: 1rem;
+    }
+    .config-left .logo-box {
+      width: 4rem; height: 4rem;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .config-left .logo-box img { width: 100%; height: 100%; object-fit: contain; }
+    .config-left h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; }
+    .config-left h1 .hive { color: #ff4d00; }
+    .config-left h1 .sight { color: #0a0a0a; }
+    .config-left p { font-size: 0.875rem; color: var(--muted-fg); line-height: 1.6; }
+    .config-left .security {
+      display: flex; align-items: flex-start; gap: 0.5rem;
+      font-size: 0.75rem; color: var(--muted-fg); padding-top: 0.5rem;
+    }
+    .config-left .security svg { flex-shrink: 0; margin-top: 2px; color: var(--success); }
+    .config-right { padding: 2.5rem; }
+    .config-right h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem; }
+    .config-right .subtitle { font-size: 0.875rem; color: var(--muted-fg); margin-bottom: 1.5rem; }
+    .form-group { margin-bottom: 1rem; }
+    .form-label {
+      display: flex; align-items: center; gap: 0.375rem;
+      font-size: 0.75rem; font-weight: 500; color: var(--muted-fg); margin-bottom: 0.375rem;
+    }
+    .form-label svg { width: 0.875rem; height: 0.875rem; }
+    .input-group { display: flex; }
+    .input {
+      flex: 1;
+      height: 2.5rem;
+      border-radius: 0.375rem 0 0 0.375rem;
+      border: 1px solid var(--input);
+      background: var(--bg);
+      padding: 0.5rem 0.75rem;
+      font-size: 0.875rem;
+      font-family: var(--font-mono);
+      color: var(--fg);
+      outline: none;
+    }
+    .input:focus { box-shadow: 0 0 0 2px var(--ring); }
+    .input-suffix {
+      display: inline-flex; align-items: center;
+      padding: 0 0.75rem;
+      border: 1px solid var(--input); border-left: none;
+      border-radius: 0 0.375rem 0.375rem 0;
+      background: var(--muted);
+      font-size: 0.75rem; color: var(--muted-fg);
+      font-family: var(--font-mono);
+    }
+    .form-hint { font-size: 0.75rem; color: var(--muted-fg); margin-top: 0.25rem; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+      width: 100%;
+      height: 2.5rem;
+      border: none; border-radius: 0.375rem;
+      font-size: 0.875rem; font-weight: 500;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      background: var(--primary); color: var(--primary-fg);
+      margin-top: 0.5rem;
+      transition: opacity 150ms;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn:hover:not(:disabled) { opacity: 0.9; }
+    .alert { padding: 0.75rem; border-radius: 0.5rem; margin-top: 0.75rem; font-size: 0.875rem; }
+    .alert-danger { background: hsla(0,72%,55%,0.1); border: 1px solid hsla(0,72%,55%,0.3); color: #b91c1c; }
+    .alert-success { background: hsla(165,60%,42%,0.1); border: 1px solid hsla(165,60%,42%,0.3); color: #0d9488; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+  </style>
+</head>
+<body>
+  <header class="config-topbar">
+    <img src="https://www.chargebee.com/static/resources/brand/chargebee-logo-black.svg" alt="Chargebee" class="chargebee-logo" onerror="this.style.display='none'">
+    <span class="topbar-sep">|</span>
+    <span class="brand"><span class="hive">Hive</span><span class="sight">Sight</span></span>
+  </header>
+  <div class="config-center">
+    <div class="config-card fade-in">
+      <div class="config-left">
+        <div class="logo-box">
+          <img src="/images/hivesight-logo.png" alt="HiveSight">
+        </div>
+        <h1><span class="hive">Hive</span><span class="sight">Sight</span></h1>
+        <p>Predict. Validate. Prevent surprises — see your subscription's future before your customers do.</p>
+        <div class="security">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          <p>Credentials are stored securely and used only to communicate with Chargebee.</p>
+        </div>
+      </div>
+      <div class="config-right">
+        <h2>Connect to Chargebee</h2>
+        <p class="subtitle">Enter your site name and API key to get started.</p>
+        <form id="login-form">
+          <div class="form-group">
+            <label class="form-label">
+              <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10A15.3 15.3 0 0112 2z"/></svg>
+              Site Name
+            </label>
+            <div class="input-group">
+              <input type="text" id="site-input" class="input" placeholder="your-site" required autocomplete="off">
+              <span class="input-suffix">.chargebee.com</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+              API Key
+            </label>
+            <input type="password" id="apikey-input" class="input" placeholder="test_xxxxxxxxxxxxxxxx" required autocomplete="off" style="border-radius:0.375rem;width:100%">
+            <p class="form-hint">Settings → Configure Chargebee → API Keys</p>
+          </div>
+          <div id="login-message" class="alert d-none"></div>
+          <button type="submit" class="btn" id="btn-signin">
+            Sign in
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <script>
+    const API_BASE = '/api';
+    const msgEl = document.getElementById('login-message');
+    const form = document.getElementById('login-form');
+    const btnSignin = document.getElementById('btn-signin');
+
+    function showMsg(text, isError) {
+      msgEl.textContent = text;
+      msgEl.className = 'alert ' + (isError ? 'alert-danger' : 'alert-success');
+      msgEl.classList.remove('d-none');
+    }
+    function hideMsg() {
+      msgEl.classList.add('d-none');
+    }
+
+    // If already configured, redirect to validation page
+    fetch(API_BASE + '/config/chargebee')
+      .then(r => r.json())
+      .then(data => {
+        if (data.hasRuntimeConfig) {
+          window.location.href = '/';
+        }
+      })
+      .catch(() => {});
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideMsg();
+      const site = document.getElementById('site-input').value.trim();
+      const key = document.getElementById('apikey-input').value.trim();
+      if (!site || !key) {
+        showMsg('Site name and API key are required.', true);
+        return;
+      }
+      btnSignin.disabled = true;
+      try {
+        const res = await fetch(API_BASE + '/config/chargebee', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ site, apiKey: key })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || data.message || 'Failed to save');
+        showMsg('Connected! Redirecting...', false);
+        setTimeout(() => { window.location.href = '/'; }, 500);
+      } catch (err) {
+        showMsg(err.message || 'Failed to connect. Check your credentials.', true);
+        btnSignin.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

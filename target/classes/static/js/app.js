@@ -814,7 +814,7 @@ function renderMonthlyBreakdown(data) {
         return `
             <div class="card mb-3 ${cardClass}">
                 <div class="card-header py-2 ${headerClass}">
-                    <strong>${b.monthLabel}</strong>${isCreditNote ? ' <span class="badge bg-danger ms-1">Credit Note</span>' : ''}
+                    <strong>${b.monthLabel}</strong>${isCreditNote ? ' <span class="badge bg-danger ms-1">Refundable Credit Note</span>' : ''}
                 </div>
                 <div class="card-body py-3 small">
                     <div class="mb-2">
@@ -949,10 +949,119 @@ function renderValidationBadge(passed, message, data) {
     }
 }
 
+// Chargebee config: redirect to login if not configured, else show site badge
+async function loadChargebeeConfig() {
+    try {
+        const res = await fetch(`${API_BASE}/config/chargebee`);
+        const data = await res.json();
+        if (!data.hasRuntimeConfig) {
+            window.location.href = '/login.html';
+            return;
+        }
+        if (data.site) {
+            const badge = document.getElementById('siteBadge');
+            if (badge) {
+                badge.textContent = data.site + '.chargebee.com';
+                badge.classList.remove('d-none');
+            }
+        }
+    } catch (e) {
+        console.warn('Could not load Chargebee config:', e);
+        window.location.href = '/login.html';
+    }
+}
+
+function setupChargebeeConfigModal() {
+    const modal = document.getElementById('chargebeeConfigModal');
+    const btnOpen = document.getElementById('btnChargebeeSettings');
+    const btnSave = document.getElementById('btnSaveConfig');
+    const form = document.getElementById('chargebeeConfigForm');
+    const siteInput = document.getElementById('configSiteInput');
+    const apiKeyInput = document.getElementById('configApiKeyInput');
+    const msgEl = document.getElementById('configMessage');
+
+    if (!modal || !btnOpen) return;
+
+    btnOpen.addEventListener('click', async () => {
+        msgEl.classList.add('d-none');
+        try {
+            const res = await fetch(`${API_BASE}/config/chargebee`);
+            const data = await res.json();
+            siteInput.value = data.site || '';
+            apiKeyInput.value = '';
+            apiKeyInput.placeholder = data.hasRuntimeConfig ? 'Enter new key to change, or leave blank to keep' : 'test_xxxxxxxxxxxxxxxx';
+        } catch (e) {
+            siteInput.value = '';
+            apiKeyInput.value = '';
+        }
+        new bootstrap.Modal(modal).show();
+    });
+
+    const btnSignOut = document.getElementById('btnSignOut');
+    if (btnSignOut) {
+        btnSignOut.addEventListener('click', async () => {
+            try {
+                await fetch(`${API_BASE}/config/chargebee`, { method: 'DELETE' });
+                bootstrap.Modal.getInstance(modal).hide();
+                window.location.href = '/login.html';
+            } catch (e) {
+                console.warn('Sign out failed:', e);
+            }
+        });
+    }
+
+    btnSave.addEventListener('click', async () => {
+        const site = siteInput.value?.trim();
+        const apiKey = apiKeyInput.value?.trim();
+        if (!site) {
+            msgEl.textContent = 'Site name is required.';
+            msgEl.className = 'alert alert-danger mb-0';
+            msgEl.classList.remove('d-none');
+            return;
+        }
+        if (!apiKey) {
+            const res = await fetch(`${API_BASE}/config/chargebee`);
+            const data = await res.json();
+            if (!data.hasRuntimeConfig) {
+                msgEl.textContent = 'API key is required for first-time setup.';
+                msgEl.className = 'alert alert-danger mb-0';
+                msgEl.classList.remove('d-none');
+                return;
+            }
+        }
+        msgEl.classList.add('d-none');
+        btnSave.disabled = true;
+        try {
+            const body = { site };
+            if (apiKey) body.apiKey = apiKey;
+            const res = await fetch(`${API_BASE}/config/chargebee`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || data.error || 'Failed to save');
+            msgEl.textContent = data.message || 'Configuration saved.';
+            msgEl.className = 'alert alert-success mb-0';
+            msgEl.classList.remove('d-none');
+            loadChargebeeConfig();
+            setTimeout(() => bootstrap.Modal.getInstance(modal).hide(), 1000);
+        } catch (e) {
+            msgEl.textContent = e.message || 'Failed to save configuration.';
+            msgEl.className = 'alert alert-danger mb-0';
+            msgEl.classList.remove('d-none');
+        } finally {
+            btnSave.disabled = false;
+        }
+    });
+}
+
 // Set default start/end months: current month to 18 months from now
 document.addEventListener('DOMContentLoaded', () => {
     checkAiStatus();
     switchAiInsightsMode();
+    loadChargebeeConfig();
+    setupChargebeeConfigModal();
     const now = new Date();
     const startEl = document.getElementById('startMonth');
     const endEl = document.getElementById('endMonth');
