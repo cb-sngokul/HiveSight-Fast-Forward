@@ -5,22 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HiveSight - Billing Validation Engine</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/css/hivesight.css?v=8" rel="stylesheet">
+    <link href="/css/hivesight.css?v=10" rel="stylesheet">
 </head>
-<body>
-    <nav class="navbar navbar-dark bg-dark navbar-expand-lg">
-        <div class="container d-flex align-items-center">
-            <a class="navbar-brand fw-bold" href="/">
-                <span class="text-warning">Hive</span><span class="text-dark">Sight</span>
+<body class="simulator-layout">
+    <header class="sim-header">
+        <div class="sim-header-inner">
+            <a href="/" class="sim-logo-group text-decoration-none">
+                <img src="/images/hivesight-logo.png" alt="HiveSight" class="sim-logo-img">
+                <span class="sim-logo-text"><span class="text-warning">Hive</span><span class="text-dark">Sight</span></span>
             </a>
-            <span class="navbar-text text-muted small">Because Hindsight is too expensive for Enterprise Data</span>
-            <span id="siteBadge" class="badge bg-secondary me-2 d-none" title="Connected Chargebee site"></span>
-            <button class="btn btn-outline-secondary btn-sm me-2" id="btnChargebeeSettings" title="Configure Chargebee site and API key">
-                Chargebee Settings
-            </button>
-            <a class="btn btn-outline-warning btn-sm" href="http://localhost:8767" target="_blank" rel="noopener">AI Agent</a>
+            <div class="sim-header-right">
+                <span id="siteBadge" class="sim-status-pill d-none" title="Connected Chargebee site"></span>
+                <button class="sim-btn-icon" id="btnChargebeeSettings" title="Configure Chargebee site and API key">
+                    <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                </button>
+                <a class="sim-btn sim-btn-primary sim-btn-sm" href="http://localhost:8767" target="_blank" rel="noopener">AI Agent</a>
+            </div>
         </div>
-    </nav>
+    </header>
 
     <!-- Chargebee Config Modal -->
     <div class="modal fade" id="chargebeeConfigModal" tabindex="-1" aria-labelledby="chargebeeConfigModalLabel" aria-hidden="true">
@@ -49,110 +51,113 @@
                     </form>
                 </div>
                 <div class="modal-footer d-flex justify-content-between">
-                    <button type="button" class="btn btn-outline-danger btn-sm" id="btnSignOut" title="Clear credentials and return to login">Sign out</button>
-                    <div>
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="button" class="btn btn-primary" id="btnSaveConfig">Save & Connect</button>
+                    <button type="button" class="sim-btn sim-btn-danger sim-btn-sm" id="btnSignOut" title="Clear credentials and return to login">Sign out</button>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="sim-btn sim-btn-secondary sim-btn-sm" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="sim-btn sim-btn-primary sim-btn-sm" id="btnSaveConfig">Save & Connect</button>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <main class="container py-5">
-        <div class="hero-section">
-            <h1>Billing Validation Engine</h1>
-            <p class="lead mb-0">Simulate your Chargebee subscription lifecycle. Catch "time-bomb" errors before they occur—especially around scheduled ramps.</p>
-        </div>
-
-        <div class="row g-4">
-            <div class="col-lg-6">
-                <div class="card shadow-sm h-100">
-                    <div class="card-header cb-primary">
-                        <h5 class="mb-0">1. Select Subscription</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="mb-3">
-                            <label class="form-label">Subscription ID</label>
-                            <div class="input-group">
-                                <input type="text" id="subscriptionId" class="form-control" placeholder="e.g. 8asukSOXe0W3SU">
-                                <button class="btn btn-outline-secondary" type="button" id="btnFetchSubs">Fetch List</button>
-                                <button class="btn btn-outline-primary" type="button" id="btnLoadDetails" title="Load subscription details">Load Details</button>
-                                <button class="btn btn-outline-primary" type="button" id="btnImport">Import CSV</button>
-                                <input type="file" id="fileImport" class="d-none" accept=".csv">
-                            </div>
-                            <div id="subscriptionList" class="mt-2"></div>
-                            <div id="importedList" class="mt-2 d-none">
-                                <div id="importedMessage" class="alert alert-info py-2 small mb-2 d-none"></div>
-                                <small class="text-muted mb-1 d-block">Imported (click to select):</small>
-                                <div id="importedListItems"></div>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Expected Cancel Date (Ghost of March)</label>
-                            <input type="date" id="expectedCancel" class="form-control" placeholder="2027-11-30">
-                        </div>
-                        <div id="subscriptionDetailsCard" class="subscription-details-card d-none"></div>
-                    </div>
+    <main class="sim-main">
+        <div class="sim-card">
+            <div class="sim-card-header">
+                <div class="sim-card-icon sim-card-icon-orange">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </div>
+                <div>
+                    <div class="sim-card-title">Select Subscription</div>
+                    <div class="sim-card-desc">Enter subscription ID, fetch list, or import CSV</div>
                 </div>
             </div>
+            <div class="sim-form-group">
+                <div class="sim-input-wrap">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" id="subscriptionId" class="form-control sim-input-with-icon" placeholder="e.g. 8asukSOXe0W3SU">
+                </div>
+                <div class="sim-btn-row">
+                    <button class="sim-btn sim-btn-primary sim-btn-sm" type="button" id="btnFetchSubs">Fetch List</button>
+                    <button class="sim-btn sim-btn-primary sim-btn-sm" type="button" id="btnLoadDetails" title="Load subscription details">Load Details</button>
+                    <button class="sim-btn sim-btn-primary sim-btn-sm" type="button" id="btnImport">Import CSV</button>
+                    <input type="file" id="fileImport" class="d-none" accept=".csv">
+                </div>
+                <div id="subscriptionList" class="sim-mt-2"></div>
+                <div id="importedList" class="sim-mt-2 d-none">
+                    <div id="importedMessage" class="alert alert-info py-2 small mb-2 d-none"></div>
+                    <small class="sim-text-muted mb-1 d-block">Imported (click to select):</small>
+                    <div id="importedListItems"></div>
+                </div>
+                <div class="sim-date-row">
+                    <div class="sim-date-col">
+                        <label class="form-label">Expected Cancel Date (Ghost of March)</label>
+                        <input type="date" id="expectedCancel" class="form-control" placeholder="2027-11-30">
+                    </div>
+                </div>
+                <div id="subscriptionDetailsCard" class="subscription-details-card d-none"></div>
+            </div>
+        </div>
 
-            <div class="col-lg-6">
-                <div class="card shadow-sm h-100">
-                    <div class="card-header cb-success">
-                        <h5 class="mb-0">2. Run Simulation</h5>
+        <div class="sim-card">
+            <div class="sim-card-header">
+                <div class="sim-card-icon sim-card-icon-green">
+                    <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                </div>
+                <div>
+                    <div class="sim-card-title">Run Simulation</div>
+                    <div class="sim-card-desc">Set date range and simulate or validate</div>
+                </div>
+            </div>
+            <div class="sim-form-group">
+                <div class="sim-date-row">
+                    <div class="sim-date-col">
+                        <label class="form-label">Start Month</label>
+                        <input type="month" id="startMonth" class="form-control" title="First month of simulation (YYYY-MM)">
                     </div>
-                    <div class="card-body">
-                        <div class="row g-2 mb-3">
-                            <div class="col-6">
-                                <label class="form-label small text-muted">Start Month</label>
-                                <input type="month" id="startMonth" class="form-control" title="First month of simulation (YYYY-MM)">
-                            </div>
-                            <div class="col-6">
-                                <label class="form-label small text-muted">End Month</label>
-                                <input type="month" id="endMonth" class="form-control" title="Last month of simulation (YYYY-MM)">
-                            </div>
-                        </div>
-                        <div class="d-grid gap-2">
-                            <button class="btn btn-success btn-lg" id="btnSimulate">
-                                Simulate
-                            </button>
-                            <button class="btn btn-outline-success" id="btnValidate">
-                                Validate Ghost of March
-                            </button>
-                            <button class="btn btn-success" type="button" id="btnSimulateBatch" disabled title="Import a CSV with subscription IDs first">
-                                Simulate Batch
-                            </button>
-                        </div>
-                        <div id="loading" class="text-center py-4 d-none">
-                            <div class="spinner-border text-primary" role="status"></div>
-                            <p class="mt-2 text-muted" id="loadingMessage">Simulating...</p>
-                        </div>
+                    <div class="sim-date-col">
+                        <label class="form-label">End Month</label>
+                        <input type="month" id="endMonth" class="form-control" title="Last month of simulation (YYYY-MM)">
                     </div>
+                </div>
+                <div class="sim-btn-row">
+                    <button class="sim-btn sim-btn-primary sim-btn-sm" id="btnSimulate">Simulate</button>
+                    <button class="sim-btn sim-btn-primary sim-btn-sm" id="btnValidate">Validate Ghost of March</button>
+                    <button class="sim-btn sim-btn-primary sim-btn-sm" type="button" id="btnSimulateBatch" disabled title="Import a CSV with subscription IDs first">Simulate Batch</button>
+                </div>
+                <div id="loading" class="sim-loading d-none">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 sim-text-muted" id="loadingMessage">Simulating...</p>
                 </div>
             </div>
         </div>
 
-        <div class="row mt-4">
-            <div class="col-12">
-                <div class="card shadow-sm">
-                    <div class="card-header cb-dark d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <h5 class="mb-0">3. Timeline & Results</h5>
-                        <div class="d-flex align-items-center gap-2 flex-wrap">
-                            <span id="exportReadyMessage" class="small text-success d-none">Exports are ready to download.</span>
-                            <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="btnExport" data-bs-toggle="dropdown" disabled title="Run a simulation first to export" aria-expanded="false">Export CSV</button>
-                                <ul class="dropdown-menu dropdown-menu-end" id="exportDropdownMenu" aria-labelledby="btnExport">
-                                    <li><a class="dropdown-item" href="#" id="exportExecutive" data-export-type="executive">1. Executive summary</a></li>
-                                    <li><a class="dropdown-item" href="#" id="exportMonthly" data-export-type="monthly">2. Monthly detailed</a></li>
-                                </ul>
-                            </div>
-                            <span id="validationBadge" class="badge d-none"></span>
-                        </div>
+        <div class="sim-card">
+            <div class="sim-card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="sim-card-icon sim-card-icon-blue">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                     </div>
-                    <div class="card-body">
-                        <div id="validationResult" class="validation-result-card mb-4 d-none"></div>
-                        <div id="detailedReport" class="d-none">
+                    <div>
+                        <div class="sim-card-title">Timeline & Results</div>
+                        <div class="sim-card-desc">Event timeline and simulation report</div>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span id="exportReadyMessage" class="small text-success d-none">Exports are ready to download.</span>
+                    <div class="dropdown">
+                        <button class="sim-btn sim-btn-primary sim-btn-sm dropdown-toggle" type="button" id="btnExport" data-bs-toggle="dropdown" disabled title="Run a simulation first to export" aria-expanded="false">Export CSV</button>
+                        <ul class="dropdown-menu dropdown-menu-end" id="exportDropdownMenu" aria-labelledby="btnExport">
+                            <li><a class="dropdown-item" href="#" id="exportExecutive" data-export-type="executive">1. Executive summary</a></li>
+                            <li><a class="dropdown-item" href="#" id="exportMonthly" data-export-type="monthly">2. Monthly detailed</a></li>
+                        </ul>
+                    </div>
+                    <span id="validationBadge" class="badge d-none"></span>
+                </div>
+            </div>
+            <div class="sim-card-body">
+                <div id="validationResult" class="validation-result-card mb-4 d-none"></div>
+                <div id="detailedReport" class="d-none">
                             <h6 class="text-uppercase text-muted mb-3">Simulation Report</h6>
                             <div class="report-summary mb-4 p-3 bg-light rounded">
                                 <div class="row g-3">
@@ -241,42 +246,41 @@
                                 </div>
                             </div>
                         </div>
-                        <h6 class="text-uppercase text-muted mb-2 mt-4">Event Timeline</h6>
-                        <div id="timeline" class="timeline"></div>
-                        <div id="error" class="alert alert-danger d-none"></div>
-                    </div>
-                </div>
+                <h6 class="text-uppercase text-muted mb-2 mt-4">Event Timeline</h6>
+                <div id="timeline" class="timeline"></div>
+                <div id="error" class="alert alert-danger d-none"></div>
             </div>
         </div>
 
-        <div class="row mt-4">
-            <div class="col-12">
-                <div class="card shadow-sm border-info">
-                    <div class="card-header cb-info">
-                        <h5 class="mb-0">AI Insights</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="alert alert-secondary small mb-3" id="aiConfigAlert">
-                            <span id="aiStatusText">Checking AI status...</span> <a href="#" id="aiConfigLink" class="d-none">Configure</a>
-                        </div>
-                        <div id="aiInsightsSingle">
+        <div class="sim-card">
+            <div class="sim-card-header">
+                <div class="sim-card-icon sim-card-icon-blue">
+                    <svg viewBox="0 0 24 24"><path d="M12 2a4 4 0 014 4c0 1.95-1.4 3.58-3.25 3.93L12 22l-.75-12.07A4.001 4.001 0 0112 2z"/></svg>
+                </div>
+                <div>
+                    <div class="sim-card-title">AI Insights</div>
+                    <div class="sim-card-desc">Generate summaries, alerts, and chat with AI</div>
+                </div>
+            </div>
+            <div class="sim-card-body">
+                <div id="aiInsightsSingle">
                             <p class="small text-muted mb-3">Run a single simulation above, then use these AI features for your subscription.</p>
                             <div class="d-flex flex-wrap gap-2 mb-3">
-                                <button class="btn btn-sm btn-outline-primary" id="btnAiSummary">Generate AI Summary</button>
-                                <button class="btn btn-sm btn-outline-warning" id="btnAiAlerts">Smart Alerts</button>
+                                <button class="sim-btn sim-btn-primary sim-btn-sm" id="btnAiSummary">Generate AI Summary</button>
+                                <button class="sim-btn sim-btn-primary sim-btn-sm" id="btnAiAlerts">Smart Alerts</button>
                             </div>
                             <div id="aiSummary" class="card mb-3 d-none"><div class="card-body"></div></div>
                             <div id="aiAlerts" class="mb-3 d-none"></div>
                             <div class="card">
                                 <div class="card-header py-2 d-flex justify-content-between align-items-center">
                                     <span>AI Chat Assistant</span>
-                                    <button class="btn btn-sm btn-outline-secondary" type="button" id="btnChatToggle">Expand</button>
+                                    <button class="sim-btn sim-btn-secondary sim-btn-sm" type="button" id="btnChatToggle">Expand</button>
                                 </div>
                                 <div class="card-body collapse" id="chatPanel">
                                     <div id="chatMessages" class="mb-2" style="max-height: 200px; overflow-y: auto;"></div>
                                     <div class="input-group input-group-sm">
                                         <input type="text" id="chatInput" class="form-control" placeholder="Ask about your simulation...">
-                                        <button class="btn btn-primary" type="button" id="btnChatSend">Send</button>
+                                        <button class="sim-btn sim-btn-primary sim-btn-sm" type="button" id="btnChatSend">Send</button>
                                     </div>
                                 </div>
                             </div>
@@ -284,35 +288,32 @@
                         <div id="aiInsightsBatch" class="d-none">
                             <p class="small text-muted mb-3">Batch simulation complete. Get AI insights across all subscriptions.</p>
                             <div class="d-flex flex-wrap gap-2 mb-3">
-                                <button class="btn btn-sm btn-outline-primary" id="btnAiBatchSummary">Generate Batch Summary</button>
-                                <button class="btn btn-sm btn-outline-warning" id="btnAiBatchAlerts">Batch Smart Alerts</button>
+                                <button class="sim-btn sim-btn-primary sim-btn-sm" id="btnAiBatchSummary">Generate Batch Summary</button>
+                                <button class="sim-btn sim-btn-primary sim-btn-sm" id="btnAiBatchAlerts">Batch Smart Alerts</button>
                             </div>
                             <div id="aiBatchSummary" class="card mb-3 d-none"><div class="card-body"></div></div>
                             <div id="aiBatchAlerts" class="mb-3 d-none"></div>
                             <div class="card">
                                 <div class="card-header py-2 d-flex justify-content-between align-items-center">
                                     <span>Batch Chat Assistant</span>
-                                    <button class="btn btn-sm btn-outline-secondary" type="button" id="btnBatchChatToggle">Expand</button>
+                                    <button class="sim-btn sim-btn-secondary sim-btn-sm" type="button" id="btnBatchChatToggle">Expand</button>
                                 </div>
                                 <div class="card-body collapse" id="batchChatPanel">
                                     <div id="batchChatMessages" class="mb-2" style="max-height: 200px; overflow-y: auto;"></div>
                                     <div class="input-group input-group-sm">
                                         <input type="text" id="batchChatInput" class="form-control" placeholder="Ask about the batch (e.g. Which subs have the most ramps?)...">
-                                        <button class="btn btn-primary" type="button" id="btnBatchChatSend">Send</button>
+                                        <button class="sim-btn sim-btn-primary sim-btn-sm" type="button" id="btnBatchChatSend">Send</button>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
                 </div>
             </div>
         </div>
     </main>
 
-    <footer class="py-4 mt-5 text-center small">
-        <div class="container">
-            HiveSight — Hackathon Project | Chargebee Billing Validation
-        </div>
+    <footer class="sim-footer">
+        <div class="sim-footer-inner">HiveSight — Hackathon Project | Chargebee Billing Validation</div>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

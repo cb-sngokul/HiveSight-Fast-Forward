@@ -1,6 +1,7 @@
 package com.hivesight.controller;
 
 import com.hivesight.service.ChargebeeService;
+import com.hivesight.service.ChargebeeConfigService;
 import com.hivesight.engine.Simulator;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -18,12 +19,24 @@ import java.util.Map;
 public class ApiController {
 
     private final ChargebeeService chargebeeService;
+    private final ChargebeeConfigService configService;
     private final String defaultTimezone;
 
     public ApiController(ChargebeeService chargebeeService,
+            ChargebeeConfigService configService,
             @Value("${chargebee.timezone:Asia/Kolkata}") String defaultTimezone) {
         this.chargebeeService = chargebeeService;
+        this.configService = configService;
         this.defaultTimezone = defaultTimezone;
+    }
+
+    private ResponseEntity<?> requireChargebeeConfig() {
+        if (!configService.hasRuntimeConfig()) {
+            return ResponseEntity.status(400).body(Map.of(
+                    "error", "Chargebee not configured",
+                    "message", "Please sign in at /login.html and enter your Chargebee site and API key."));
+        }
+        return null;
     }
 
     @GetMapping("/health")
@@ -34,6 +47,8 @@ public class ApiController {
     @GetMapping("/subscriptions")
     public ResponseEntity<?> listSubscriptions(
             @RequestParam(required = false) Boolean has_scheduled_changes) {
+        ResponseEntity<?> configErr = requireChargebeeConfig();
+        if (configErr != null) return configErr;
         try {
             List<Map<String, Object>> subs = chargebeeService.listSubscriptions(
                     Boolean.TRUE.equals(has_scheduled_changes));
@@ -51,6 +66,8 @@ public class ApiController {
             @RequestParam(required = false) String start_month,
             @RequestParam(required = false) String end_month,
             @RequestParam(required = false) String timezone) {
+        ResponseEntity<?> configErr = requireChargebeeConfig();
+        if (configErr != null) return configErr;
         try {
             ZoneId zone = parseTimezone(timezone);
             long simulationStart = start_month != null && !start_month.isBlank()
@@ -70,6 +87,8 @@ public class ApiController {
 
     @GetMapping("/subscription/{subscriptionId}/details")
     public ResponseEntity<?> subscriptionDetails(@PathVariable String subscriptionId) {
+        ResponseEntity<?> configErr = requireChargebeeConfig();
+        if (configErr != null) return configErr;
         try {
             return ResponseEntity.ok(chargebeeService.getSubscriptionDetails(subscriptionId));
         } catch (Exception e) {
@@ -81,6 +100,8 @@ public class ApiController {
 
     @GetMapping("/subscription/{subscriptionId}/debug")
     public ResponseEntity<?> subscriptionDebug(@PathVariable String subscriptionId) {
+        ResponseEntity<?> configErr = requireChargebeeConfig();
+        if (configErr != null) return configErr;
         try {
             Map<String, Object> sub = chargebeeService.getSubscription(subscriptionId);
             // Extract key fields that affect cancellation logic
@@ -110,6 +131,8 @@ public class ApiController {
             @RequestParam(required = false) String start_month,
             @RequestParam(required = false) String end_month,
             @RequestParam(required = false) String timezone) {
+        ResponseEntity<?> configErr = requireChargebeeConfig();
+        if (configErr != null) return configErr;
         try {
             ZoneId zone = parseTimezone(timezone);
             long simulationStart = start_month != null && !start_month.isBlank()

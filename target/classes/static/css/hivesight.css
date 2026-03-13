@@ -576,3 +576,439 @@ h6.text-uppercase.text-muted {
   max-width: 72rem;
 }
 
+/* ═══ Simulator layout (reference format) — light mode ═══ */
+.simulator-layout {
+  --sim-bg: #f8fafc;
+  --sim-card: #ffffff;
+  --sim-card-border: #e2e8f0;
+  --sim-fg: #0f172a;
+  --sim-muted: #64748b;
+  --sim-accent: #f97316;
+  --sim-accent-glow: rgba(249,115,22,0.12);
+  --sim-info: #3b82f6;
+  --sim-info-glow: rgba(59,130,246,0.1);
+  --sim-success: #22c55e;
+  --sim-success-glow: rgba(34,197,94,0.1);
+  --sim-destructive: #ef4444;
+  --sim-input-bg: #ffffff;
+  --sim-input-border: #cbd5e1;
+  --sim-radius: 12px;
+}
+
+body.simulator-layout {
+  background: var(--sim-bg) !important;
+  color: var(--sim-fg) !important;
+}
+
+.sim-header {
+  border-bottom: 1px solid var(--sim-card-border);
+  background: rgba(255,255,255,0.9);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.sim-header-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sim-logo-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sim-logo-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--sim-accent), #fb923c);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+  color: #fff;
+}
+
+.sim-logo-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.sim-logo-text .text-warning { color: var(--sim-accent) !important; }
+.sim-logo-text .text-dark { color: var(--sim-fg) !important; }
+
+.sim-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.sim-status-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--sim-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.sim-status-pill::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sim-accent);
+  margin-right: 6px;
+  animation: sim-pulse 2s ease-in-out infinite;
+}
+
+@keyframes sim-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.sim-btn-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--sim-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.sim-btn-icon:hover {
+  background: var(--sim-input-bg);
+  color: var(--sim-destructive);
+}
+
+.sim-btn-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+}
+
+.sim-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s;
+}
+
+.sim-btn-primary {
+  background: var(--sim-accent);
+  color: #fff;
+}
+
+.sim-btn-primary:hover {
+  background: #ea580c;
+  color: #fff;
+}
+
+.sim-btn-sm {
+  height: 32px;
+  padding: 0 16px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sim-btn-secondary {
+  background: var(--sim-input-bg);
+  color: var(--sim-fg);
+  border: 1px solid var(--sim-card-border);
+}
+
+.sim-btn-secondary:hover {
+  background: var(--sim-card-border);
+  color: var(--sim-fg);
+}
+
+.sim-btn-danger {
+  background: #dc2626;
+  color: #fff;
+}
+
+.sim-btn-danger:hover {
+  background: #b91c1c;
+  color: #fff;
+}
+
+.sim-btn:disabled,
+.sim-btn[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sim-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.sim-card {
+  border-radius: var(--sim-radius);
+  border: 1px solid var(--sim-card-border);
+  background: var(--sim-card);
+  padding: 24px;
+  animation: sim-fadeIn 0.4s ease;
+}
+
+@keyframes sim-fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.sim-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sim-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sim-card-icon svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+}
+
+.sim-card-icon-orange {
+  background: var(--sim-accent-glow);
+  color: var(--sim-accent);
+}
+
+.sim-card-icon-green {
+  background: var(--sim-success-glow);
+  color: var(--sim-success);
+}
+
+.sim-card-icon-blue {
+  background: var(--sim-info-glow);
+  color: var(--sim-info);
+}
+
+.sim-card-icon-red {
+  background: rgba(239,68,68,0.1);
+  color: var(--sim-destructive);
+}
+
+.sim-card-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--sim-fg);
+}
+
+.sim-card-desc {
+  font-size: 13px;
+  color: var(--sim-muted);
+}
+
+.sim-card-body {
+  padding-top: 0;
+}
+
+.sim-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sim-input-wrap {
+  position: relative;
+}
+
+.sim-input-wrap svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--sim-muted);
+  width: 16px;
+  height: 16px;
+}
+
+.sim-input-with-icon {
+  padding-left: 38px !important;
+}
+
+.simulator-layout .sim-card .form-control {
+  height: 42px;
+  border-radius: 8px;
+  border: 1px solid var(--sim-input-border);
+  background: var(--sim-input-bg);
+  color: var(--sim-fg);
+}
+
+.simulator-layout .sim-card .form-control:focus {
+  border-color: var(--sim-accent);
+  box-shadow: 0 0 0 3px var(--sim-accent-glow);
+}
+
+.sim-date-row {
+  display: flex;
+  gap: 12px;
+}
+
+.sim-date-col {
+  flex: 1;
+}
+
+.sim-date-col label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--sim-muted);
+  margin-bottom: 6px;
+}
+
+.sim-btn-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sim-mt-2 { margin-top: 8px; }
+.sim-text-muted { color: var(--sim-muted); }
+
+.sim-loading {
+  text-align: center;
+  padding: 24px;
+}
+
+.sim-footer {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--sim-muted);
+  border-top: 1px solid var(--sim-card-border);
+  margin-top: 32px;
+}
+
+.sim-footer-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* Timeline in dark theme */
+.simulator-layout .timeline::before {
+  background: var(--sim-card-border);
+}
+
+.simulator-layout .timeline-item {
+  border-bottom: 1px solid var(--sim-card-border);
+}
+
+.simulator-layout .timeline-item:hover {
+  background: rgba(0,0,0,0.02);
+}
+
+.simulator-layout .report-summary {
+  background: var(--sim-input-bg) !important;
+  border: 1px solid var(--sim-card-border);
+}
+
+.simulator-layout .report-stat-value {
+  color: var(--sim-fg) !important;
+}
+
+.simulator-layout .card.border-warning,
+.simulator-layout .card.border-success {
+  border-color: var(--sim-card-border) !important;
+  background: var(--sim-card) !important;
+}
+
+.simulator-layout .validation-result-card {
+  background: var(--sim-accent-glow);
+  border-left-color: var(--sim-accent);
+}
+
+.simulator-layout .subscription-option:hover {
+  background: #f1f5f9;
+}
+
+.simulator-layout .subscription-option.selected {
+  background: var(--sim-accent-glow);
+  border-left-color: var(--sim-accent);
+}
+
+.simulator-layout .chart-container {
+  background: var(--sim-input-bg);
+  border-color: var(--sim-card-border);
+}
+
+.simulator-layout .monthly-breakdown-card {
+  border-left-color: var(--sim-info);
+}
+
+.simulator-layout .monthly-breakdown-card .card-header {
+  background: var(--sim-card) !important;
+  color: var(--sim-fg) !important;
+}
+
+.simulator-layout .dropdown-menu {
+  background: var(--sim-card);
+  border-color: var(--sim-card-border);
+}
+
+.simulator-layout .dropdown-item {
+  color: var(--sim-fg);
+}
+
+.simulator-layout .dropdown-item:hover {
+  background: #f1f5f9;
+}
+
+.simulator-layout .modal-content {
+  background: var(--sim-card);
+  border-color: var(--sim-card-border);
+  color: var(--sim-fg);
+}
+
+.simulator-layout .modal-header {
+  border-bottom-color: var(--sim-card-border);
+}
+
+.simulator-layout .modal-footer {
+  border-top-color: var(--sim-card-border);
+}
+

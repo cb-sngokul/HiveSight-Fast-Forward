@@ -949,10 +949,11 @@ function renderValidationBadge(passed, message, data) {
     }
 }
 
-// Chargebee config: redirect to login if not configured, else show site badge
+// Chargebee config: redirect to login only when explicitly not configured (not on fetch error)
 async function loadChargebeeConfig() {
     try {
         const res = await fetch(`${API_BASE}/config/chargebee`);
+        if (!res.ok) return; // Don't redirect on server error
         const data = await res.json();
         if (!data.hasRuntimeConfig) {
             window.location.href = '/login.html';
@@ -967,7 +968,7 @@ async function loadChargebeeConfig() {
         }
     } catch (e) {
         console.warn('Could not load Chargebee config:', e);
-        window.location.href = '/login.html';
+        // Don't redirect on network error — user may be offline or server starting
     }
 }
 
@@ -1154,6 +1155,10 @@ document.getElementById('btnFetchSubs').addEventListener('click', async () => {
     try {
         const res = await fetch(`${API_BASE}/subscriptions?has_scheduled_changes=true`);
         const data = await res.json();
+        if (!res.ok) {
+            listEl.innerHTML = `<small class="text-danger">${data.message || data.error || 'Failed to fetch'}</small>`;
+            return;
+        }
         if (data.subscriptions && data.subscriptions.length > 0) {
             listEl.innerHTML = '<small class="text-muted mb-2">Click to select:</small>' +
                 data.subscriptions.map(s => `
@@ -1172,6 +1177,10 @@ document.getElementById('btnFetchSubs').addEventListener('click', async () => {
         } else {
             const resAll = await fetch(`${API_BASE}/subscriptions`);
             const dataAll = await resAll.json();
+            if (!resAll.ok) {
+                listEl.innerHTML = `<small class="text-danger">${dataAll.message || dataAll.error || 'Failed to fetch'}</small>`;
+                return;
+            }
             if (dataAll.subscriptions && dataAll.subscriptions.length > 0) {
                 listEl.innerHTML = '<small class="text-muted mb-2">No subscriptions with ramps. All subscriptions (click to select):</small>' +
                     dataAll.subscriptions.map(s => `

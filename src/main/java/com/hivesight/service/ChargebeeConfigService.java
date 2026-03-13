@@ -42,7 +42,22 @@ public class ChargebeeConfigService {
 
     public String getSite() {
         ensureLoaded();
-        return cachedSite != null && !cachedSite.isBlank() ? cachedSite : defaultSite;
+        String raw = cachedSite != null && !cachedSite.isBlank() ? cachedSite : defaultSite;
+        return sanitizeSite(raw);
+    }
+
+    /** Strip protocol and .chargebee.com suffix so we only have the site name (e.g. sngokulraj-test). */
+    private String sanitizeSite(String site) {
+        if (site == null || site.isBlank()) return site;
+        String s = site.trim();
+        // Strip protocol
+        if (s.startsWith("https://")) s = s.substring(8);
+        else if (s.startsWith("http://")) s = s.substring(7);
+        else if (s.startsWith("https/")) s = s.substring(6);
+        else if (s.startsWith("http/")) s = s.substring(5);
+        // Strip .chargebee.com suffix
+        if (s.endsWith(".chargebee.com")) s = s.substring(0, s.length() - 13);
+        return s.trim();
     }
 
     public String getApiKey() {
@@ -88,7 +103,7 @@ public class ChargebeeConfigService {
     public void update(String site, String apiKey) throws IOException {
         if (site == null) site = "";
         if (apiKey == null) apiKey = "";
-        site = site.trim();
+        site = sanitizeSite(site.trim());
         apiKey = apiKey.trim();
         ensureLoaded();
         String finalSite = site.isEmpty() ? getSite() : site;
