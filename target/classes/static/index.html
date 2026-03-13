@@ -67,8 +67,8 @@
                     <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 </div>
                 <div>
-                    <div class="sim-card-title">Select Subscription</div>
-                    <div class="sim-card-desc">Enter subscription ID, fetch list, or import CSV</div>
+                    <div class="sim-card-title">Subscription Simulator</div>
+                    <div class="sim-card-desc">Enter subscription ID, fetch list, or import CSV — set date range and run simulation</div>
                 </div>
             </div>
             <div class="sim-form-group">
@@ -76,39 +76,12 @@
                     <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     <input type="text" id="subscriptionId" class="form-control sim-input-with-icon" placeholder="e.g. 8asukSOXe0W3SU">
                 </div>
-                <div class="sim-btn-row">
-                    <button class="sim-btn sim-btn-primary sim-btn-sm" type="button" id="btnFetchSubs">Fetch List</button>
-                    <button class="sim-btn sim-btn-primary sim-btn-sm" type="button" id="btnLoadDetails" title="Load subscription details">Load Details</button>
-                    <button class="sim-btn sim-btn-primary sim-btn-sm" type="button" id="btnImport">Import CSV</button>
-                    <input type="file" id="fileImport" class="d-none" accept=".csv">
-                </div>
                 <div id="subscriptionList" class="sim-mt-2"></div>
                 <div id="importedList" class="sim-mt-2 d-none">
                     <div id="importedMessage" class="alert alert-info py-2 small mb-2 d-none"></div>
                     <small class="sim-text-muted mb-1 d-block">Imported (click to select):</small>
                     <div id="importedListItems"></div>
                 </div>
-                <div class="sim-date-row">
-                    <div class="sim-date-col">
-                        <label class="form-label">Expected Cancel Date (Ghost of March)</label>
-                        <input type="date" id="expectedCancel" class="form-control" placeholder="2027-11-30">
-                    </div>
-                </div>
-                <div id="subscriptionDetailsCard" class="subscription-details-card d-none"></div>
-            </div>
-        </div>
-
-        <div class="sim-card">
-            <div class="sim-card-header">
-                <div class="sim-card-icon sim-card-icon-green">
-                    <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                </div>
-                <div>
-                    <div class="sim-card-title">Run Simulation</div>
-                    <div class="sim-card-desc">Set date range and simulate or validate</div>
-                </div>
-            </div>
-            <div class="sim-form-group">
                 <div class="sim-date-row">
                     <div class="sim-date-col">
                         <label class="form-label">Start Month</label>
@@ -120,14 +93,17 @@
                     </div>
                 </div>
                 <div class="sim-btn-row">
-                    <button class="sim-btn sim-btn-primary sim-btn-sm" id="btnSimulate">Simulate</button>
-                    <button class="sim-btn sim-btn-primary sim-btn-sm" id="btnValidate">Validate Ghost of March</button>
+                    <button class="sim-btn sim-btn-primary sim-btn-sm" type="button" id="btnFetchSubs">List Subscriptions</button>
+                    <button class="sim-btn sim-btn-primary sim-btn-sm" id="btnLoadAndSimulate" title="Load subscription details and run simulation">Simulate</button>
                     <button class="sim-btn sim-btn-primary sim-btn-sm" type="button" id="btnSimulateBatch" disabled title="Import a CSV with subscription IDs first">Simulate Batch</button>
+                    <button class="sim-btn sim-btn-primary sim-btn-sm" type="button" id="btnImport">Import CSV</button>
+                    <input type="file" id="fileImport" class="d-none" accept=".csv">
                 </div>
                 <div id="loading" class="sim-loading d-none">
                     <div class="spinner-border text-primary" role="status"></div>
                     <p class="mt-2 sim-text-muted" id="loadingMessage">Simulating...</p>
                 </div>
+                <div id="subscriptionDetailsCard" class="subscription-details-card d-none"></div>
             </div>
         </div>
 
@@ -296,6 +272,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="/js/app.js?v=18"></script>
+    <script src="/js/app.js?v=20"></script>
 </body>
 </html>

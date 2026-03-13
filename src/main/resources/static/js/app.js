@@ -795,10 +795,11 @@ function renderMonthlyBreakdown(data) {
 
     container.classList.remove('d-none');
 
-    const breakdownCards = breakdowns.map(b => {
+    const breakdownCards = breakdowns.map((b, idx) => {
         const isCreditNote = (b.changes || []).some(c => /credit note/i.test(String(c)));
         const cardClass = isCreditNote ? 'monthly-breakdown-card border-danger' : 'monthly-breakdown-card';
         const headerClass = isCreditNote ? 'py-2 bg-danger bg-opacity-10 text-danger' : 'py-2 bg-light';
+        const collapseId = `monthly-breakdown-${idx}`;
         const discountLine = b.discountCents > 0
             ? `<div class="d-flex justify-content-between"><span>Manual Discount:</span><span class="text-danger">-${formatAmount(b.discountCents, currencyCode)}</span></div>`
             : '';
@@ -812,41 +813,61 @@ function renderMonthlyBreakdown(data) {
         const totalClass = b.totalCents < 0 ? 'text-danger' : '';
 
         return `
-            <div class="card mb-3 ${cardClass}">
-                <div class="card-header py-2 ${headerClass}">
+            <div class="card mb-2 ${cardClass}">
+                <div class="card-header py-2 ${headerClass} d-flex justify-content-between align-items-center monthly-breakdown-toggle" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}" role="button" style="cursor: pointer;">
                     <strong>${b.monthLabel}</strong>${isCreditNote ? ' <span class="badge bg-danger ms-1">Refundable Credit Note</span>' : ''}
+                    <span class="monthly-breakdown-chevron text-muted small">▼</span>
                 </div>
-                <div class="card-body py-3 small">
-                    <div class="mb-2">
-                        ${!isCreditNote ? `<div class="d-flex justify-content-between"><span>Unit Price:</span><span>${formatAmount(b.unitPrice, currencyCode)}</span></div>
-                        <div class="d-flex justify-content-between"><span>Quantity:</span><span>${b.quantity}</span></div>
-                        <div class="d-flex justify-content-between"><span>Subtotal:</span><span>${formatAmount(b.subtotalCents, currencyCode)}</span></div>
-                        ${discountLine}
-                        ${taxLine}` : ''}
-                        <div class="d-flex justify-content-between mt-2 pt-2 border-top"><span><strong>Total:</strong></span><span class="${totalClass}"><strong>${formatAmount(b.totalCents, currencyCode)}</strong></span></div>
+                <div class="collapse" id="${collapseId}">
+                    <div class="card-body py-3 small">
+                        <div class="mb-2">
+                            ${!isCreditNote ? `<div class="d-flex justify-content-between"><span>Unit Price:</span><span>${formatAmount(b.unitPrice, currencyCode)}</span></div>
+                            <div class="d-flex justify-content-between"><span>Quantity:</span><span>${b.quantity}</span></div>
+                            <div class="d-flex justify-content-between"><span>Subtotal:</span><span>${formatAmount(b.subtotalCents, currencyCode)}</span></div>
+                            ${discountLine}
+                            ${taxLine}` : ''}
+                            <div class="d-flex justify-content-between mt-2 pt-2 border-top"><span><strong>Total:</strong></span><span class="${totalClass}"><strong>${formatAmount(b.totalCents, currencyCode)}</strong></span></div>
+                        </div>
+                        <div class="mt-2">
+                            <strong>Change:</strong>
+                            <ul class="mb-0 ps-3 mt-1">${(b.changes || []).map(c => `<li>${c}</li>`).join('')}</ul>
+                        </div>
+                        ${impactLine}
                     </div>
-                    <div class="mt-2">
-                        <strong>Change:</strong>
-                        <ul class="mb-0 ps-3 mt-1">${(b.changes || []).map(c => `<li>${c}</li>`).join('')}</ul>
-                    </div>
-                    ${impactLine}
                 </div>
             </div>
         `;
     }).join('');
 
     const cancellationCard = cancelledMonth
-        ? `<div class="card mb-3 monthly-breakdown-card border-danger">
-            <div class="card-header py-2 bg-danger text-white">
+        ? `<div class="card mb-2 monthly-breakdown-card border-danger">
+            <div class="card-header py-2 bg-danger text-white d-flex justify-content-between align-items-center monthly-breakdown-toggle" data-bs-toggle="collapse" data-bs-target="#monthly-breakdown-cancelled" aria-expanded="false" aria-controls="monthly-breakdown-cancelled" role="button" style="cursor: pointer;">
                 <strong>Subscription cancelled</strong>
+                <span class="monthly-breakdown-chevron text-white-50 small">▼</span>
             </div>
-            <div class="card-body py-3 small">
-                Subscription cancelled in <strong>${cancelledMonth}</strong>.
+            <div class="collapse" id="monthly-breakdown-cancelled">
+                <div class="card-body py-3 small">
+                    Subscription cancelled in <strong>${cancelledMonth}</strong>.
+                </div>
             </div>
         </div>`
         : '';
 
     listEl.innerHTML = breakdownCards + cancellationCard;
+
+    // Rotate chevron on expand/collapse
+    listEl.querySelectorAll('.monthly-breakdown-toggle').forEach(toggle => {
+        const chevron = toggle.querySelector('.monthly-breakdown-chevron');
+        const targetId = toggle.getAttribute('data-bs-target');
+        const target = targetId ? document.querySelector(targetId) : null;
+        if (target && chevron) {
+            const updateChevron = () => {
+                chevron.textContent = target.classList.contains('show') ? '▲' : '▼';
+            };
+            target.addEventListener('shown.bs.collapse', updateChevron);
+            target.addEventListener('hidden.bs.collapse', updateChevron);
+        }
+    });
 }
 
 function renderDetailedReport(data) {
@@ -896,7 +917,7 @@ function renderDetailedReport(data) {
     } else if (cancelled) {
         insightEl.classList.remove('d-none');
         const lastEvent = events.find(e => e.type === 'cancelled');
-        insightEl.innerHTML = `<strong>Subscription ends:</strong> ${lastEvent ? lastEvent.dateFormatted : '—'}. Use "Validate Ghost of March" to verify the expected cancellation date.`;
+        insightEl.innerHTML = `<strong>Subscription ends:</strong> ${lastEvent ? lastEvent.dateFormatted : '—'}.`;
     } else {
         insightEl.classList.add('d-none');
     }
@@ -914,7 +935,7 @@ function renderValidationBadge(passed, message, data) {
 
         // Verbose validation result card - shown at TOP of results
         resultCard.classList.remove('d-none');
-        const expected = document.getElementById('expectedCancel')?.value || '—';
+        const expected = '—';
         const events = data?.events || [];
         const lastEvent = events[events.length - 1];
 
@@ -1147,7 +1168,50 @@ function getSimulationParams() {
     return params.toString();
 }
 
-document.getElementById('btnLoadDetails').addEventListener('click', () => loadSubscriptionDetails());
+async function loadAndSimulate() {
+    const id = document.getElementById('subscriptionId')?.value?.trim();
+    if (!id) {
+        showError('Please enter a subscription ID');
+        return;
+    }
+    hideError();
+    showLoading(true);
+    try {
+        // Load subscription details and run simulation in parallel
+        const [detailsRes, simRes] = await Promise.all([
+            fetch(`${API_BASE}/subscription/${encodeURIComponent(id)}/details`),
+            fetch(`${API_BASE}/simulate/${encodeURIComponent(id)}${getSimulationParams() ? '?' + getSimulationParams() : ''}`)
+        ]);
+        const detailsData = await detailsRes.json();
+        const simData = await simRes.json();
+        if (!detailsRes.ok) {
+            renderSubscriptionDetailsCard(null);
+        } else {
+            renderSubscriptionDetailsCard(detailsData);
+        }
+        if (!simRes.ok) throw new Error(simData.message || 'Simulation failed');
+        lastSimulationData = simData;
+        lastSimulationResult = simData;
+        lastBatchResults = null;
+        hideBatchCharts();
+        const btnExport = document.getElementById('btnExport');
+        if (btnExport) btnExport.disabled = false;
+        const exportReadyMsg = document.getElementById('exportReadyMessage');
+        if (exportReadyMsg) exportReadyMsg.classList.remove('d-none');
+        renderTimeline(simData.events || [], simData.timezone);
+        renderDetailedReport(simData);
+        renderInvoiceTrendChart(simData);
+        renderMonthlyBreakdown(simData);
+        renderValidationBadge(null, null, null);
+        switchAiInsightsMode();
+    } catch (e) {
+        showError(e.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
+document.getElementById('btnLoadAndSimulate').addEventListener('click', loadAndSimulate);
 
 document.getElementById('btnFetchSubs').addEventListener('click', async () => {
     const listEl = document.getElementById('subscriptionList');
@@ -1171,7 +1235,7 @@ document.getElementById('btnFetchSubs').addEventListener('click', async () => {
                     listEl.querySelectorAll('.subscription-option').forEach(x => x.classList.remove('selected'));
                     el.classList.add('selected');
                     document.getElementById('subscriptionId').value = el.dataset.id;
-                    loadSubscriptionDetails();
+                    loadAndSimulate();
                 });
             });
         } else {
@@ -1193,7 +1257,7 @@ document.getElementById('btnFetchSubs').addEventListener('click', async () => {
                         listEl.querySelectorAll('.subscription-option').forEach(x => x.classList.remove('selected'));
                         el.classList.add('selected');
                         document.getElementById('subscriptionId').value = el.dataset.id;
-                        loadSubscriptionDetails();
+                        loadAndSimulate();
                     });
                 });
             } else {
@@ -1202,78 +1266,6 @@ document.getElementById('btnFetchSubs').addEventListener('click', async () => {
         }
     } catch (e) {
         listEl.innerHTML = `<small class="text-danger">Error: ${e.message}</small>`;
-    }
-});
-
-document.getElementById('btnSimulate').addEventListener('click', async () => {
-    const id = document.getElementById('subscriptionId').value.trim();
-    if (!id) {
-        showError('Please enter a subscription ID');
-        return;
-    }
-    hideError();
-    showLoading(true);
-    try {
-        const qs = getSimulationParams();
-        const res = await fetch(`${API_BASE}/simulate/${encodeURIComponent(id)}${qs ? '?' + qs : ''}`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || 'Simulation failed');
-        lastSimulationData = data;
-        lastSimulationResult = data;
-        lastBatchResults = null;
-        hideBatchCharts();
-        const btnExport = document.getElementById('btnExport');
-        if (btnExport) btnExport.disabled = false;
-        const exportReadyMsg = document.getElementById('exportReadyMessage');
-        if (exportReadyMsg) exportReadyMsg.classList.remove('d-none');
-        renderTimeline(data.events || [], data.timezone);
-        renderDetailedReport(data);
-        renderInvoiceTrendChart(data);
-        renderMonthlyBreakdown(data);
-        renderValidationBadge(null, null, null);
-        switchAiInsightsMode();
-    } catch (e) {
-        showError(e.message);
-    } finally {
-        showLoading(false);
-    }
-});
-
-document.getElementById('btnValidate').addEventListener('click', async () => {
-    const id = document.getElementById('subscriptionId').value.trim();
-    const expected = document.getElementById('expectedCancel').value;
-    if (!id) {
-        showError('Please enter a subscription ID');
-        return;
-    }
-    hideError();
-    showLoading(true);
-    try {
-        const params = new URLSearchParams(getSimulationParams());
-        if (expected) params.set('expected_cancel', expected);
-        const qs = params.toString();
-        const url = `${API_BASE}/validate/ghost-of-march/${encodeURIComponent(id)}${qs ? '?' + qs : ''}`;
-        const res = await fetch(url);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || 'Validation failed');
-        lastSimulationData = data;
-        lastSimulationResult = data;
-        lastBatchResults = null;
-        hideBatchCharts();
-        const btnExport = document.getElementById('btnExport');
-        if (btnExport) btnExport.disabled = false;
-        const exportReadyMsg = document.getElementById('exportReadyMessage');
-        if (exportReadyMsg) exportReadyMsg.classList.remove('d-none');
-        renderTimeline(data.events || [], data.timezone);
-        renderDetailedReport(data);
-        renderInvoiceTrendChart(data);
-        renderMonthlyBreakdown(data);
-        renderValidationBadge(data.validationPassed, data.validationMessage, data);
-        switchAiInsightsMode();
-    } catch (e) {
-        showError(e.message);
-    } finally {
-        showLoading(false);
     }
 });
 
@@ -1414,10 +1406,8 @@ document.getElementById('fileImport').addEventListener('change', (e) => {
             window.importedSubscriptions = rows;
             const btnSimulateBatch = document.getElementById('btnSimulateBatch');
             if (btnSimulateBatch) btnSimulateBatch.disabled = false;
-            const btnSimulate = document.getElementById('btnSimulate');
-            const btnValidate = document.getElementById('btnValidate');
-            if (btnSimulate) btnSimulate.disabled = true;
-            if (btnValidate) btnValidate.disabled = true;
+            const btnLoadAndSimulate = document.getElementById('btnLoadAndSimulate');
+            if (btnLoadAndSimulate) btnLoadAndSimulate.disabled = true;
             const importedMsg = document.getElementById('importedMessage');
             if (importedMsg) {
                 importedMsg.innerHTML = `${rows.length} subscription(s) imported. Click Simulate Batch to run. <a href="#" id="clearImport" class="alert-link">Clear import</a>`;
@@ -1427,8 +1417,7 @@ document.getElementById('fileImport').addEventListener('change', (e) => {
                     e.preventDefault();
                     window.importedSubscriptions = [];
                     if (btnSimulateBatch) btnSimulateBatch.disabled = true;
-                    if (btnSimulate) btnSimulate.disabled = false;
-                    if (btnValidate) btnValidate.disabled = false;
+                    if (btnLoadAndSimulate) btnLoadAndSimulate.disabled = false;
                     const listEl = document.getElementById('importedList');
                     const itemsEl = document.getElementById('importedListItems');
                     if (listEl) listEl.classList.add('d-none');
@@ -1450,9 +1439,7 @@ document.getElementById('fileImport').addEventListener('change', (e) => {
                         itemsEl.querySelectorAll('.imported-option').forEach(x => x.classList.remove('selected'));
                         el.classList.add('selected');
                         const subInput = document.getElementById('subscriptionId');
-                        const expectedInput = document.getElementById('expectedCancel');
                         if (subInput) subInput.value = el.dataset.id;
-                        if (expectedInput) expectedInput.value = el.dataset.expected || '';
                     });
                 });
             }
