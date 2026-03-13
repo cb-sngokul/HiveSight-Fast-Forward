@@ -578,9 +578,65 @@ function hideError() {
     document.getElementById('error').classList.add('d-none');
 }
 
-function renderTimeline(events, timezone) {
+function getMonthLabelFromEpoch(epochSec, tz) {
+    if (!epochSec) return null;
+    const d = new Date(epochSec * 1000);
+    const s = d.toLocaleDateString('en-CA', { timeZone: tz });
+    const [y, m] = s.substring(0, 7).split('-').map(Number);
+    return getMonthLabel(y, m);
+}
+
+function buildBreakdownHtml(b, currencyCode) {
+    if (!b) return '';
+    const isCreditNote = (b.changes || []).some(c => /credit note/i.test(String(c)));
+    const discountLine = b.discountCents > 0
+        ? `<div class="d-flex justify-content-between"><span>Manual Discount:</span><span class="text-danger">-${formatAmount(b.discountCents, currencyCode)}</span></div>`
+        : '';
+    const taxLabel = b.taxRatePercent != null ? `Tax (${b.taxRatePercent}%):` : 'Tax:';
+    const taxLine = (b.taxRatePercent != null || b.taxCents > 0) && !isCreditNote
+        ? `<div class="d-flex justify-content-between"><span>${taxLabel}</span><span>${formatAmount(b.taxCents, currencyCode)}</span></div>`
+        : '';
+    const impactLine = b.impactVsPreviousCents != null && !isCreditNote
+        ? `<div class="mt-2 small ${b.impactVsPreviousCents >= 0 ? 'text-success' : 'text-danger'}"><strong>Impact:</strong> ${formatAmount(Math.abs(b.impactVsPreviousCents), currencyCode)} ${b.impactVsPreviousCents >= 0 ? 'increase' : 'decrease'} vs previous month</div>`
+        : '';
+    const totalClass = b.totalCents < 0 ? 'text-danger' : '';
+    return `
+        <div class="mb-2">
+            ${!isCreditNote ? `<div class="d-flex justify-content-between"><span>Unit Price:</span><span>${formatAmount(b.unitPrice, currencyCode)}</span></div>
+            <div class="d-flex justify-content-between"><span>Quantity:</span><span>${b.quantity}</span></div>
+            <div class="d-flex justify-content-between"><span>Subtotal:</span><span>${formatAmount(b.subtotalCents, currencyCode)}</span></div>
+            ${discountLine}
+            ${taxLine}` : ''}
+            <div class="d-flex justify-content-between mt-2 pt-2 border-top"><span><strong>Total:</strong></span><span class="${totalClass}"><strong>${formatAmount(b.totalCents, currencyCode)}</strong></span></div>
+        </div>
+        <div class="mt-2">
+            <strong>Change:</strong>
+            <ul class="mb-0 ps-3 mt-1">${(b.changes || []).map(c => `<li>${c}</li>`).join('')}</ul>
+        </div>
+        ${impactLine}
+    `;
+}
+
+function renderTimeline(data) {
     const container = document.getElementById('timeline');
+    if (!container) return;
     container.innerHTML = '';
+
+    const events = data.events || [];
+    const timezone = data.timezone || 'UTC';
+    const currencyCode = data.currencyCode || 'USD';
+    const breakdowns = data.monthlyBreakdowns || [];
+    // For renewals: use only the renewal breakdown (exclude credit notes). Credit notes share monthKey but
+    // are tied to ramp date; renewal billing details should show the renewal invoice, not the credit note.
+    const isCreditNoteBreakdown = (b) => (b.changes || []).some(c => /credit note/i.test(String(c))) || (b.totalCents != null && b.totalCents < 0);
+    const breakdownByMonthKey = {};
+    breakdowns.forEach(b => {
+        if (!b.monthKey) return;
+        if (isCreditNoteBreakdown(b)) return; // Skip credit notes - renewal events should show renewal breakdown only
+        breakdownByMonthKey[b.monthKey] = b;
+    });
+
+    const cancelledMonth = getCancelledMonthLabel(events, timezone);
 
     const icons = {
         renewal: '📆',
@@ -594,7 +650,7 @@ function renderTimeline(events, timezone) {
         credit_note: '📄'
     };
 
-    events.forEach(e => {
+    events.forEach((e, idx) => {
         const div = document.createElement('div');
         div.className = 'timeline-item';
         let amountHtml = '';
@@ -606,19 +662,46 @@ function renderTimeline(events, timezone) {
             amountHtml = `<div class="timeline-amount ${cls} fw-semibold">${label}${formatAmount(amt, e.currencyCode)}</div>`;
         }
         const dateDisplay = e.date ? formatDateTime(e.date, timezone) : (e.dateFormatted || '—');
+        const monthKey = e.date ? getMonthKeyInTz(e.date, timezone) : null;
+        const breakdown = monthKey ? breakdownByMonthKey[monthKey] : null;
+        const collapseId = `timeline-breakdown-${idx}`;
+        const showBillingDetails = e.type === 'renewal' && breakdown;
+        let dropdownSection = '';
+        if (showBillingDetails) {
+            dropdownSection = `
+                <div class="mt-1">
+                    <button class="btn btn-link btn-sm p-0 text-decoration-none timeline-toggle" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" type="button">
+                        <span class="timeline-chevron">▼</span> View details
+                    </button>
+                </div>
+                <div class="collapse mt-2" id="${collapseId}"><div class="small p-2 bg-light rounded">${buildBreakdownHtml(breakdown, currencyCode)}</div></div>
+            `;
+        }
         div.innerHTML = `
             <div class="timeline-icon ${e.type}">${icons[e.type] || '•'}</div>
             <div class="timeline-content">
                 <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
-                    <div>
+                    <div class="flex-grow-1">
                         <div class="timeline-date" title="${dateDisplay}">${dateDisplay}</div>
                         <div class="timeline-desc">${e.description}</div>
                     </div>
                     ${amountHtml}
                 </div>
+                ${dropdownSection}
             </div>
         `;
         container.appendChild(div);
+    });
+
+    // Update chevron on expand/collapse
+    container.querySelectorAll('.timeline-toggle').forEach(btn => {
+        const chevron = btn.querySelector('.timeline-chevron');
+        const targetId = btn.getAttribute('data-bs-target');
+        const target = targetId ? document.querySelector(targetId) : null;
+        if (target && chevron) {
+            target.addEventListener('shown.bs.collapse', () => { chevron.textContent = '▲'; });
+            target.addEventListener('hidden.bs.collapse', () => { chevron.textContent = '▼'; });
+        }
     });
 }
 
@@ -734,6 +817,7 @@ function renderInvoiceTrendChart(data) {
     }
 
     const ctx = canvas.getContext('2d');
+    // Chargebee brand colors: Mature Blue #012A38, Clarity Blue #A2C1C4, Confident Orange #FF3300
     invoiceChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
@@ -741,8 +825,11 @@ function renderInvoiceTrendChart(data) {
             datasets: [{
                 label: 'Invoice Amount',
                 data: chartData.values,
-                borderColor: 'rgb(1, 42, 56)',
-                backgroundColor: 'rgba(162, 193, 196, 0.2)',
+                borderColor: '#012A38',
+                backgroundColor: 'rgba(162, 193, 196, 0.3)',
+                pointBackgroundColor: '#FF3300',
+                pointBorderColor: '#012A38',
+                pointBorderWidth: 1,
                 fill: true,
                 tension: 0.2
             }]
@@ -776,98 +863,6 @@ function getCancelledMonthLabel(events, tz) {
     const d = new Date(cancelled.date * 1000);
     const month = d.toLocaleDateString('en-US', { timeZone: tz, month: 'long', year: 'numeric' });
     return month;
-}
-
-function renderMonthlyBreakdown(data) {
-    const container = document.getElementById('monthlyBreakdown');
-    const listEl = document.getElementById('monthlyBreakdownList');
-    if (!container || !listEl) return;
-
-    const breakdowns = data.monthlyBreakdowns || [];
-    const tz = data.timezone || 'UTC';
-    const currencyCode = data.currencyCode || 'USD';
-    const cancelledMonth = getCancelledMonthLabel(data.events, tz);
-
-    if (breakdowns.length === 0 && !cancelledMonth) {
-        container.classList.add('d-none');
-        return;
-    }
-
-    container.classList.remove('d-none');
-
-    const breakdownCards = breakdowns.map((b, idx) => {
-        const isCreditNote = (b.changes || []).some(c => /credit note/i.test(String(c)));
-        const cardClass = isCreditNote ? 'monthly-breakdown-card border-danger' : 'monthly-breakdown-card';
-        const headerClass = isCreditNote ? 'py-2 bg-danger bg-opacity-10 text-danger' : 'py-2 bg-light';
-        const collapseId = `monthly-breakdown-${idx}`;
-        const discountLine = b.discountCents > 0
-            ? `<div class="d-flex justify-content-between"><span>Manual Discount:</span><span class="text-danger">-${formatAmount(b.discountCents, currencyCode)}</span></div>`
-            : '';
-        const taxLabel = b.taxRatePercent != null ? `Tax (${b.taxRatePercent}%):` : 'Tax:';
-        const taxLine = (b.taxRatePercent != null || b.taxCents > 0) && !isCreditNote
-            ? `<div class="d-flex justify-content-between"><span>${taxLabel}</span><span>${formatAmount(b.taxCents, currencyCode)}</span></div>`
-            : '';
-        const impactLine = b.impactVsPreviousCents != null && !isCreditNote
-            ? `<div class="mt-2 small ${b.impactVsPreviousCents >= 0 ? 'text-success' : 'text-danger'}"><strong>Impact:</strong> ${formatAmount(Math.abs(b.impactVsPreviousCents), currencyCode)} ${b.impactVsPreviousCents >= 0 ? 'increase' : 'decrease'} vs previous month</div>`
-            : '';
-        const totalClass = b.totalCents < 0 ? 'text-danger' : '';
-
-        return `
-            <div class="card mb-2 ${cardClass}">
-                <div class="card-header py-2 ${headerClass} d-flex justify-content-between align-items-center monthly-breakdown-toggle" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}" role="button" style="cursor: pointer;">
-                    <strong>${b.monthLabel}</strong>${isCreditNote ? ' <span class="badge bg-danger ms-1">Refundable Credit Note</span>' : ''}
-                    <span class="monthly-breakdown-chevron text-muted small">▼</span>
-                </div>
-                <div class="collapse" id="${collapseId}">
-                    <div class="card-body py-3 small">
-                        <div class="mb-2">
-                            ${!isCreditNote ? `<div class="d-flex justify-content-between"><span>Unit Price:</span><span>${formatAmount(b.unitPrice, currencyCode)}</span></div>
-                            <div class="d-flex justify-content-between"><span>Quantity:</span><span>${b.quantity}</span></div>
-                            <div class="d-flex justify-content-between"><span>Subtotal:</span><span>${formatAmount(b.subtotalCents, currencyCode)}</span></div>
-                            ${discountLine}
-                            ${taxLine}` : ''}
-                            <div class="d-flex justify-content-between mt-2 pt-2 border-top"><span><strong>Total:</strong></span><span class="${totalClass}"><strong>${formatAmount(b.totalCents, currencyCode)}</strong></span></div>
-                        </div>
-                        <div class="mt-2">
-                            <strong>Change:</strong>
-                            <ul class="mb-0 ps-3 mt-1">${(b.changes || []).map(c => `<li>${c}</li>`).join('')}</ul>
-                        </div>
-                        ${impactLine}
-                    </div>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    const cancellationCard = cancelledMonth
-        ? `<div class="card mb-2 monthly-breakdown-card border-danger">
-            <div class="card-header py-2 bg-danger text-white d-flex justify-content-between align-items-center monthly-breakdown-toggle" data-bs-toggle="collapse" data-bs-target="#monthly-breakdown-cancelled" aria-expanded="false" aria-controls="monthly-breakdown-cancelled" role="button" style="cursor: pointer;">
-                <strong>Subscription cancelled</strong>
-                <span class="monthly-breakdown-chevron text-white-50 small">▼</span>
-            </div>
-            <div class="collapse" id="monthly-breakdown-cancelled">
-                <div class="card-body py-3 small">
-                    Subscription cancelled in <strong>${cancelledMonth}</strong>.
-                </div>
-            </div>
-        </div>`
-        : '';
-
-    listEl.innerHTML = breakdownCards + cancellationCard;
-
-    // Rotate chevron on expand/collapse
-    listEl.querySelectorAll('.monthly-breakdown-toggle').forEach(toggle => {
-        const chevron = toggle.querySelector('.monthly-breakdown-chevron');
-        const targetId = toggle.getAttribute('data-bs-target');
-        const target = targetId ? document.querySelector(targetId) : null;
-        if (target && chevron) {
-            const updateChevron = () => {
-                chevron.textContent = target.classList.contains('show') ? '▲' : '▼';
-            };
-            target.addEventListener('shown.bs.collapse', updateChevron);
-            target.addEventListener('hidden.bs.collapse', updateChevron);
-        }
-    });
 }
 
 function renderDetailedReport(data) {
@@ -1198,10 +1193,9 @@ async function loadAndSimulate() {
         if (btnExport) btnExport.disabled = false;
         const exportReadyMsg = document.getElementById('exportReadyMessage');
         if (exportReadyMsg) exportReadyMsg.classList.remove('d-none');
-        renderTimeline(simData.events || [], simData.timezone);
+        renderTimeline(simData);
         renderDetailedReport(simData);
         renderInvoiceTrendChart(simData);
-        renderMonthlyBreakdown(simData);
         renderValidationBadge(null, null, null);
         switchAiInsightsMode();
     } catch (e) {
