@@ -52,6 +52,12 @@ chargebee.timezone=Asia/Kolkata
 > Use a **test/sandbox** site for development.  
 > Set `chargebee.timezone` to match your Chargebee site (Settings → Business Profile → Time zone).
 
+**AI features (optional):** Four options:
+- **xAI Grok (default):** `ai.grok.api-key=xxx` — Get key at [console.x.ai](https://console.x.ai)
+- **Groq (free):** `ai.provider=groq` and `ai.groq.api-key=xxx` — [console.groq.com](https://console.groq.com)
+- **OpenAI:** `ai.provider=openai` and `ai.openai.api-key=sk-xxx` — [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+- **Google Gemini (free):** `ai.provider=gemini` and `ai.gemini.api-key=xxx` — [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+
 ### Step 4: Run the Application
 
 ```bash

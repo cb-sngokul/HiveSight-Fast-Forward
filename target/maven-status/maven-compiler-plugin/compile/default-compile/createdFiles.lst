@@ -1,6 +1,8 @@
 com/hivesight/engine/Simulator.class
+com/hivesight/controller/AiController.class
 com/hivesight/engine/Ramp$CouponToAdd.class
 com/hivesight/engine/BillingPeriodUtil.class
+com/hivesight/service/AiService.class
 com/hivesight/engine/Ramp$ItemToUpdate.class
 com/hivesight/engine/Ramp$ItemToAdd.class
 com/hivesight/engine/MonthlyBreakdown.class
