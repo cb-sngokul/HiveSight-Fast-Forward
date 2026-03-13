@@ -317,44 +317,44 @@ main .row.g-4 {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 0 4px var(--card);
+  background: transparent;
 }
 
 .timeline-icon.renewal {
-  background: var(--warning);
-  color: var(--warning-foreground);
+  background: transparent;
+  color: var(--warning);
 }
 
 .timeline-icon.ramp_applied {
-  background: var(--primary);
-  color: var(--primary-foreground);
+  background: transparent;
+  color: var(--primary);
 }
 
 .timeline-icon.cancelled {
-  background: var(--destructive);
-  color: var(--destructive-foreground);
+  background: transparent;
+  color: var(--destructive);
 }
 
 .timeline-icon.trial_end {
-  background: var(--muted-foreground);
-  color: white;
+  background: transparent;
+  color: var(--muted-foreground);
 }
 
 .timeline-icon.paused,
 .timeline-icon.resumed {
-  background: var(--info);
-  color: var(--info-foreground);
+  background: transparent;
+  color: var(--info);
 }
 
 .timeline-icon.non_renewing,
 .timeline-icon.contract_end {
-  background: var(--destructive);
-  color: var(--destructive-foreground);
+  background: transparent;
+  color: var(--destructive);
 }
 
 .timeline-icon.credit_note {
-  background: var(--accent);
-  color: var(--accent-foreground);
+  background: transparent;
+  color: var(--accent);
 }
 
 .timeline-content {
@@ -857,10 +857,12 @@ body.simulator-layout {
 
 .ai-agent-iframe {
   width: 100%;
-  height: 320px;
+  height: 160px;
   border: 1px solid var(--sim-card-border);
   border-radius: var(--sim-radius);
   background: var(--sim-card);
+  overflow: hidden;
+  display: block;
 }
 
 .sim-form-group {

@@ -52,8 +52,11 @@ HTML = """
         .btn-agent:hover { background: #e62e00 !important; border-color: #e62e00 !important; color: white !important; }
         .welcome-msg { background: rgba(162,193,196,0.15); border: 1px solid var(--cb-clarity-blue); border-radius: 0.5rem; color: var(--cb-mature-blue); }
         body.embed-mode .agent-nav, body.embed-mode .agent-hero, body.embed-mode footer { display: none !important; }
-        body.embed-mode main { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
+        body.embed-mode .agent-card .card-header { display: none !important; }
+        body.embed-mode main { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; max-width: 100% !important; }
         body.embed-mode .agent-card { margin: 0 !important; }
+        body.embed-mode .agent-card .card-body { padding: 0.4rem 0.6rem !important; }
+        body.embed-mode #chatMessages { min-height: 60px !important; max-height: 180px !important; margin-bottom: 0.5rem !important; }
     </style>
 </head>
 <body>
