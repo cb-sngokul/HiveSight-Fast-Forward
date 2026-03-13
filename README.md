@@ -2,7 +2,7 @@
 
 > "Because Hindsight is too expensive for Enterprise Data."
 
-Simulate the next **18 months** of your Chargebee subscription lifecycle. Catch "time-bomb" errors before they occur—particularly around **scheduled changes (Ramps)** that the standard Chargebee UI ignores.
+Simulate the future state of your Chargebee subscription lifecycle. Catch "time-bomb" errors before they occur—particularly around **scheduled changes (Ramps)** that the standard Chargebee UI ignores.
 
 ## Tech Stack
 
@@ -75,8 +75,8 @@ mvnw.cmd spring-boot:run
 
 ### Step 5: Open in Browser
 
-- **URL:** http://localhost:8765
-- **Health check:** http://localhost:8765/api/health
+- **URL:** http://localhost:8766
+- **Health check:** http://localhost:8766/api/health
 
 ### Step 6: Use the UI
 
@@ -84,6 +84,53 @@ mvnw.cmd spring-boot:run
 2. **Select** a subscription by clicking it
 3. **Simulate 18 Months** — Run the temporal simulation
 4. **Validate Ghost of March** — Check if subscription terminates on expected date
+
+---
+
+## Run HiveSight + AI Agent (Both Together)
+
+The **AI Agent** is a chat interface that uses HiveSight's API to simulate subscriptions, validate cancellations, and answer billing questions. It lives in the `agent/` subfolder.
+
+### Prerequisites for Agent
+
+- **Python 3.9+**
+- **Groq API key** (free at [console.groq.com](https://console.groq.com)) — or use the same key as HiveSight's `ai.groq.api-key`
+
+### One-Time Agent Setup
+
+```bash
+cd agent
+python3 -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env and add GROQ_API_KEY (or it will use HiveSight's ai.groq.api-key)
+```
+
+### Option A: Start Both with One Script
+
+```bash
+chmod +x scripts/start-all.sh
+./scripts/start-all.sh
+```
+
+- **HiveSight:** http://localhost:8766  
+- **AI Agent:** http://localhost:8767  
+- Press **Ctrl+C** to stop both.
+
+### Option B: Run in Separate Terminals
+
+```bash
+# Terminal 1: HiveSight
+./mvnw spring-boot:run
+
+# Terminal 2: Agent (after HiveSight is up)
+cd agent
+source venv/bin/activate
+python app.py
+```
+
+Then open http://localhost:8767 for the AI Agent chat.
 
 ---
 
@@ -125,7 +172,7 @@ java -jar target/hivesight-1.0.0.jar
 |-------|----------|
 | `java: command not found` | Install JDK 17+ and ensure `JAVA_HOME` is set |
 | `Permission denied: ./mvnw` | Run `chmod +x mvnw` |
-| Port 8765 in use | Change port in `application.properties`: `server.port=8081` |
+| Port 8766 in use | Change port in `application.properties`: `server.port=8081` |
 | Chargebee API errors | Verify `chargebee.site` and `chargebee.api-key` in config |
 | No subscriptions listed | Ensure Chargebee site has subscriptions; try without `has_scheduled_changes` filter |
 
