@@ -754,31 +754,20 @@ function getMonthLabelFull(year, month) {
 
 function buildInvoiceTrendData(data) {
     const events = data.events || [];
+    const breakdowns = data.monthlyBreakdowns || [];
     const tz = data.timezone || 'UTC';
     const currencyCode = data.currencyCode || 'USD';
-
-    // Get events with amounts (renewals, ramp_applied)
-    const eventsWithAmount = events.filter(e => e.amount != null && e.amount !== undefined);
-    if (eventsWithAmount.length === 0) return null;
 
     const startTs = data.simulationStart;
     const endTs = data.simulationEnd;
     if (!startTs || !endTs) return null;
 
-    const eventTypeLabels = { renewal: 'Renewal', ramp_applied: 'Ramp applied', credit_note: 'Credit note' };
-    const buildReason = (e) => {
-        const typeLabel = eventTypeLabels[e.type] || (e.type || '').replace(/_/g, ' ');
-        const desc = (e.description || '').trim();
-        const amt = formatAmount(e.amount, currencyCode);
-        return desc ? `${typeLabel}: ${desc} (${amt})` : `${typeLabel} (${amt})`;
-    };
-
     // Build month buckets from simulation window (in timezone tz)
-    const monthMap = new Map();
     const startKey = getMonthKeyInTz(startTs, tz);
     const endKey = getMonthKeyInTz(endTs, tz);
     const [sy, sm] = startKey.split('-').map(Number);
     const [ey, em] = endKey.split('-').map(Number);
+    const monthMap = new Map();
     let y = sy, m = sm;
     while (y < ey || (y === ey && m <= em)) {
         const key = `${y}-${String(m).padStart(2, '0')}`;
@@ -787,15 +776,38 @@ function buildInvoiceTrendData(data) {
         if (m > 12) { m = 1; y++; }
     }
 
-    // Sum amounts by month and collect reasons (event date in site timezone)
-    eventsWithAmount.forEach(e => {
-        const monthKey = getMonthKeyInTz(e.date, tz);
-        if (monthMap.has(monthKey)) {
-            const b = monthMap.get(monthKey);
-            b.amountCents += e.amount;
-            b.reasons.push(buildReason(e));
-        }
-    });
+    // Prefer backend monthlyBreakdowns so chart matches "View details" (includes tax, discount, credit notes)
+    if (breakdowns.length > 0) {
+        breakdowns.forEach(b => {
+            if (!b.monthKey) return;
+            if (monthMap.has(b.monthKey)) {
+                const bucket = monthMap.get(b.monthKey);
+                const total = b.totalCents != null ? b.totalCents : 0;
+                bucket.amountCents += total;
+                bucket.reasons.push('Total: ' + formatAmount(total, currencyCode));
+                (b.changes || []).forEach(c => bucket.reasons.push(String(c)));
+            }
+        });
+    } else {
+        // Fallback: sum event amounts by month (events have subtotal only; no tax/discount)
+        const eventsWithAmount = events.filter(e => e.amount != null && e.amount !== undefined);
+        if (eventsWithAmount.length === 0) return null;
+        const eventTypeLabels = { renewal: 'Renewal', ramp_applied: 'Ramp applied', credit_note: 'Credit note' };
+        const buildReason = (e) => {
+            const typeLabel = eventTypeLabels[e.type] || (e.type || '').replace(/_/g, ' ');
+            const desc = (e.description || '').trim();
+            const amt = formatAmount(e.amount, currencyCode);
+            return desc ? `${typeLabel}: ${desc} (${amt})` : `${typeLabel} (${amt})`;
+        };
+        eventsWithAmount.forEach(e => {
+            const monthKey = getMonthKeyInTz(e.date, tz);
+            if (monthMap.has(monthKey)) {
+                const bucket = monthMap.get(monthKey);
+                bucket.amountCents += e.amount;
+                bucket.reasons.push(buildReason(e));
+            }
+        });
+    }
 
     const labels = [];
     const values = [];
@@ -920,13 +932,6 @@ function renderDetailedReport(data) {
             cancelledRow.classList.add('d-none');
         }
     }
-
-    document.getElementById('chargebeeNextBilling').innerHTML = data.chargebeeUiNextBilling
-        ? `<strong>${formatDate(data.chargebeeUiNextBilling)}</strong><br><small class="text-muted">Next invoice date (Chargebee)</small>`
-        : '—';
-    document.getElementById('hivesightNextBilling').innerHTML = data.hivesightNextBilling
-        ? `<strong>${formatDate(data.hivesightNextBilling)}</strong><br><small class="text-muted">Last renewal in simulation window</small>`
-        : '—';
 
     const insightEl = document.getElementById('reportInsight');
     if (ramps > 0) {
@@ -1107,7 +1112,21 @@ function setupAiAgentExpandModal() {
     });
 }
 
+/** Remove Chargebee UI / HiveSight comparison cards from DOM if present (e.g. from cache or old HTML). */
+function removeChargebeeHivesightComparisonCards() {
+    const chargebeeEl = document.getElementById('chargebeeNextBilling');
+    const hivesightEl = document.getElementById('hivesightNextBilling');
+    if (chargebeeEl) {
+        const row = chargebeeEl.closest('.row');
+        if (row) row.remove();
+    } else if (hivesightEl) {
+        const row = hivesightEl.closest('.row');
+        if (row) row.remove();
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    removeChargebeeHivesightComparisonCards();
     checkAiStatus();
     switchAiInsightsMode();
     loadChargebeeConfig();
